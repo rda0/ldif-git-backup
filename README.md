@@ -7,4 +7,3 @@ Based on [ldap-git-backup](https://github.com/elmar/ldap-git-backup), modified a
 ## Requirements
 
 - `python3`
-- `python3-yaml`

@@ -1,47 +1,61 @@
 #!/usr/bin/env python3
 
-#import os
+import os
+import sys
 import subprocess
 import re
-#import yaml
-#import argparse
+import argparse
+import pathlib
 
-def main():
+def main( argv ):
+    parser = argparse.ArgumentParser(add_help=False,
+            description='Backup OpenLDAP databases using Git')
+    parser.add_argument('-c', '--ldif-cmd',
+            dest='ldif_cmd',
+            type=str,
+            default='/usr/sbin/slapcat -n 1 -o ldif-wrap=no',
+            help='A command which returns an LDAP database in LDIF format '
+            'including operational attributes or at least entryUUID')
+    parser.add_argument('-d', '--backup-dir',
+            dest='backup_dir',
+            type=str,
+            default='/var/backups/ldap',
+            help='The directory for the git backup repository')
+    parser.add_argument('-h', '--help',
+            action='help',
+            help='Show this help message and exit')
+    args = parser.parse_args()
+
     ENTRY_SEP = '\n\n'
     ATTR_WRAP = '\n '
+
     rgx = re.compile(r'\nentryUUID: ([^\n]+)')
-#    rgx = re.compile(r'\nentryUUID: (?P<uuid>[^\n]+)')
-#    rgx = re.compile(
-#            r'^dn:{1,2} (?P<dn>[^\n]+).*?'
-#            r'\nentryUUID: (?P<uuid>[^\n]+)',
-#            re.DOTALL)
-    slapcat_cmd = '/usr/sbin/slapcat -n 1'
-    backup_dir = '/tmp/lgb/py/'
-    raw = subprocess.Popen(['/usr/sbin/slapcat', '-n', '1'],
+#    ldif_cmd_in = '/usr/sbin/slapcat  -n   1'
+    print(args.ldif_cmd)
+    ldif_cmd = re.sub('\s+', ' ', args.ldif_cmd).split(' ')
+    print(args.backup_dir)
+#    abspath = os.path.abspath(args.backup_dir)
+#    print(abspath)
+    backup_dir = pathlib.PosixPath(args.backup_dir)
+    print(backup_dir)
+    backup_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    sys.exit('stop')
+    raw = subprocess.Popen(ldif_cmd,
             stdout=subprocess.PIPE).communicate()[0]
     ldif = raw.decode('utf-8')
     ldif_unwrapped = ldif.replace(ATTR_WRAP, '')
     entries = ldif_unwrapped.split(ENTRY_SEP)
     for entry in entries[:-1]:
-        if entry == '':
-            print('is empty')
-            continue
-#    for entry in entries[:10]:
-#        dn = entry.split('\n', 1)[0].split(': ', 1)[1]
-#        uuid = entry.split('\nentryUUID: ', 1)[1].split('\n', 1)[0]
         m = rgx.search(entry)
-        uuid = None
         if m:
             uuid = m.group(1)
-#             uuid = m.group('uuid')
-#             dn = m.group('dn')
-#             print(uuid, dn)
-        fpath = ''.join([backup_dir, uuid, '.ldif'])
-#        fout = open(fpath, 'w')
-#        fout.write(''.join([entry, ENTRY_SEP]))
-#        fout.close()
-#    with open(backup_dir + 'db.yaml', 'w') as yaml_file:
-#        yaml.dump(dit.get_entry_map(), yaml_file, default_flow_style=False)
+            fpath = ''.join([backup_dir, uuid, '.ldif'])
+#            fout = open(fpath, 'w')
+#            fout.write(''.join([entry, ENTRY_SEP]))
+#            fout.close()
+        else:
+            sys.exit('Error: no entryUUID attribute found!' + 
+                    '\n\nEntry:\n\n' + entry)
 
 if __name__== "__main__":
-    main()
+    main(sys.argv)
