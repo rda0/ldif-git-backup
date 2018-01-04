@@ -31,6 +31,10 @@ def main( argv ):
             dest='no_gc',
             action='store_true',
             help='Do not perform a garbage collection')
+    parser.add_argument('--no-rm',
+            dest='no_rm',
+            action='store_true',
+            help='Do not perform a git rm')
     parser.add_argument('-e', '--exclude-attrs',
             dest='exclude_attrs',
             type=str,
@@ -58,10 +62,11 @@ def main( argv ):
 
     # Initialize git repo, get file list from last commit
     repo = git.Repo.init(dpath)
-    if len(repo.heads) == 0:
-        last_commit_files = []
-    else:
-        last_commit_files = [f.name for f in repo.head.commit.tree.blobs]
+    if not args.no_rm:
+        if len(repo.heads) == 0:
+            last_commit_files = []
+        else:
+            last_commit_files = [f.name for f in repo.head.commit.tree.blobs]
 
     # Dump LDAP database to memory
     raw = subprocess.Popen(ldif_cmd,
@@ -93,9 +98,10 @@ def main( argv ):
     repo.index.add(new_commit_files)
 
     # Remove unneeded LDIF files from index
-    to_remove_files = set(last_commit_files) - set(new_commit_files)
-    if to_remove_files:
-        repo.index.remove(to_remove_files, working_tree=True)
+    if not args.no_rm:
+        to_remove_files = set(last_commit_files) - set(new_commit_files)
+        if to_remove_files:
+            repo.index.remove(to_remove_files, working_tree=True)
 
     # Commit the changes
     repo.index.commit(args.commit_msg)
