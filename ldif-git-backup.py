@@ -60,8 +60,6 @@ def main( argv ):
             help='Show this help message and exit')
     args = vars(parser.parse_args())
     filtered_args = {k: v for k, v in args.items() if v}
-#    print('args:', args)
-#    print('filtered_args:', filtered_args)
 
     # Parse configuration file
     parsed_config = configparser.ConfigParser()
@@ -70,7 +68,6 @@ def main( argv ):
     parsed_config.sections()
     try:
         config = {k: v for k, v in parsed_config['default'].items() if v}
-#        print('config:', config)
     except KeyError:
         config = {}
     defaults_bool = [k for k, v in defaults.items() if type(v) == bool]
@@ -78,24 +75,13 @@ def main( argv ):
         if k in config:
             if config[k].lower() == 'true':
                 config[k] = True
-#                print('config[%s] = True' % k)
             elif config[k] == 'false':
                 config[k] = False
-#                print('config[%s] = False' % k)
             else:
                 del config[k]
-#    print('filtered config:', config)
 
     # Create param dict with chained default values
     param = collections.ChainMap(filtered_args, config, defaults)
-#    print()
-#    print('ldif_cmd: ' + param['ldif_cmd'])
-#    print('backup_dir: ' + param['backup_dir'])
-#    print('commit_msg: ' + param['commit_msg'])
-#    print('no_gc: ' + str(param['no_gc']))
-#    print('no_rm: ' + str(param['no_rm']))
-#    print('exclude_attrs: ' + param['exclude_attrs'])
-#    sys.exit('stop')
 
     # Define constants, compile regular expressions
     ENTRY_SEP = '\n\n'
