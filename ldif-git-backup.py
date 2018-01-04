@@ -31,8 +31,11 @@ class Ldif(object):
 class Entry(object):
     '''Represents an entry in the DIT'''
 
+#    rgx = re.compile(r'[\n]entryUUID: ([^\n]+)')
+
     def __init__(self, raw):
         self.raw = raw
+#        self.rgx = Entry.rgx
 
     def __str__(self):
         return '%s\n\n' % self.raw
@@ -41,11 +44,12 @@ class Entry(object):
         return self.raw.split('\n', 1)[0].split(': ', 1)[1]
 
     def uuid(self):
-        m = re.search('[\n]entryUUID: ([^\n]+)', self.raw)
-        if m:
-            return m.group(1)
-        else:
-            return None
+        return self.raw.split('\nentryUUID: ', 1)[1].split('\n', 1)[0]
+#        m = self.rgx.search(self.raw)
+#        if m:
+#            return m.group(1)
+#        else:
+#            return None
 
     def ldif(self):
         return self.raw + '\n\n'
