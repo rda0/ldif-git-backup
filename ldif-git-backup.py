@@ -6,43 +6,96 @@ import re
 import argparse
 import pathlib
 import git
+import collections
+import configparser
 
 def main( argv ):
+    # Define default parameter values
+    defaults = {
+        'ldif_cmd': '/usr/sbin/slapcat -n 1 -o ldif-wrap=no',
+        'backup_dir': '/var/backups/ldap',
+        'commit_msg': 'ldif-git-backup',
+        'no_gc': False,
+        'no_rm': False,
+        'exclude_attrs': '',
+    }
+
     # Parse cmd-line arguments
     parser = argparse.ArgumentParser(add_help=False,
             description='Backup OpenLDAP databases using Git')
     parser.add_argument('-c', '--ldif-cmd',
             dest='ldif_cmd',
             type=str,
-            default='/usr/sbin/slapcat -n 1 -o ldif-wrap=no',
             help='A command which returns an LDAP database in LDIF format '
             'including operational attributes or at least entryUUID')
     parser.add_argument('-d', '--backup-dir',
             dest='backup_dir',
             type=str,
-            default='/var/backups/ldap',
             help='The directory for the git backup repository')
     parser.add_argument('-m', '--commit-msg',
             dest='commit_msg',
             type=str,
-            default='ldap-git-backup',
             help='The commit message')
     parser.add_argument('--no-gc',
             dest='no_gc',
-            action='store_true',
+            action='store_const',
+            const=True,
             help='Do not perform a garbage collection')
     parser.add_argument('--no-rm',
             dest='no_rm',
-            action='store_true',
+            action='store_const',
+            const=True,
             help='Do not perform a git rm')
     parser.add_argument('-e', '--exclude-attrs',
             dest='exclude_attrs',
             type=str,
             help='Exclude all attributes matching the regular expression')
+    parser.add_argument('--config-file',
+            dest='config_file',
+            default='ldif-git-backup.conf',
+            type=str,
+            help='Path to the config file')
     parser.add_argument('-h', '--help',
             action='help',
             help='Show this help message and exit')
-    args = parser.parse_args()
+    args = vars(parser.parse_args())
+    filtered_args = {k: v for k, v in args.items() if v}
+#    print('args:', args)
+#    print('filtered_args:', filtered_args)
+
+    # Parse configuration file
+    parsed_config = configparser.ConfigParser()
+    parsed_config.sections()
+    parsed_config.read(args['config_file'])
+    parsed_config.sections()
+    try:
+        config = {k: v for k, v in parsed_config['default'].items() if v}
+#        print('config:', config)
+    except KeyError:
+        config = {}
+    defaults_bool = [k for k, v in defaults.items() if type(v) == bool]
+    for k in defaults_bool:
+        if k in config:
+            if config[k].lower() == 'true':
+                config[k] = True
+#                print('config[%s] = True' % k)
+            elif config[k] == 'false':
+                config[k] = False
+#                print('config[%s] = False' % k)
+            else:
+                del config[k]
+#    print('filtered config:', config)
+
+    # Create param dict with chained default values
+    param = collections.ChainMap(filtered_args, config, defaults)
+#    print()
+#    print('ldif_cmd: ' + param['ldif_cmd'])
+#    print('backup_dir: ' + param['backup_dir'])
+#    print('commit_msg: ' + param['commit_msg'])
+#    print('no_gc: ' + str(param['no_gc']))
+#    print('no_rm: ' + str(param['no_rm']))
+#    print('exclude_attrs: ' + param['exclude_attrs'])
+#    sys.exit('stop')
 
     # Define constants, compile regular expressions
     ENTRY_SEP = '\n\n'
