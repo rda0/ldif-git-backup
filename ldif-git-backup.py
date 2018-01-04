@@ -1,82 +1,45 @@
 #!/usr/bin/env python3
 
 #import os
-#import sys
 import subprocess
 import re
-import yaml
+#import yaml
 #import argparse
 
-class Ldif(object):
-    '''Holds LDAP data in LDIF format.'''
-
-    ENTRY_SEPARATOR = '\n\n'
-
-    def __init__(self, raw=''):
-        raw_unwrapped = raw.replace('\n ', '')
-        self.raw = raw_unwrapped.rstrip()
-
-    def __str__(self):
-        return '%s\n\n' % self.raw
-
-    def get_raw_entries(self):
-        return self.raw.split(Ldif.ENTRY_SEPARATOR)
-
-    def get_entries(self):
-        entries = []
-        for raw_entry in self.get_raw_entries():
-            entries.append(Entry(raw_entry))
-        return entries
-
-class Entry(object):
-    '''Represents an entry in the DIT'''
-
-#    rgx = re.compile(r'[\n]entryUUID: ([^\n]+)')
-
-    def __init__(self, raw):
-        self.raw = raw
-#        self.rgx = Entry.rgx
-
-    def __str__(self):
-        return '%s\n\n' % self.raw
-
-    def dn(self):
-        return self.raw.split('\n', 1)[0].split(': ', 1)[1]
-
-    def uuid(self):
-        return self.raw.split('\nentryUUID: ', 1)[1].split('\n', 1)[0]
-#        m = self.rgx.search(self.raw)
-#        if m:
-#            return m.group(1)
-#        else:
-#            return None
-
-    def ldif(self):
-        return self.raw + '\n\n'
-
-class Dit(object):
-    '''Represents a DIT'''
-
-    def __init__(self, entries):
-        self.entries = entries
-
-    def get_entry_map(self):
-        entry_map = {}
-        for entry in self.entries:
-            entry_map[entry.uuid()] = entry.dn()
-        return entry_map
-
 def main():
+    ENTRY_SEP = '\n\n'
+    ATTR_WRAP = '\n '
+    rgx = re.compile(r'\nentryUUID: ([^\n]+)')
+#    rgx = re.compile(r'\nentryUUID: (?P<uuid>[^\n]+)')
+#    rgx = re.compile(
+#            r'^dn:{1,2} (?P<dn>[^\n]+).*?'
+#            r'\nentryUUID: (?P<uuid>[^\n]+)',
+#            re.DOTALL)
     slapcat_cmd = '/usr/sbin/slapcat -n 1'
     backup_dir = '/tmp/lgb/py/'
-    slapcat_out = subprocess.getoutput(slapcat_cmd)
-    ldif = Ldif(slapcat_out)
-    dit = Dit(ldif.get_entries())
-    for entry in dit.entries:
-        fpath = backup_dir + entry.uuid() + '.ldif'
-        fout = open(fpath, 'w')
-        fout.write(entry.ldif())
-        fout.close()
+    raw = subprocess.Popen(['/usr/sbin/slapcat', '-n', '1'],
+            stdout=subprocess.PIPE).communicate()[0]
+    ldif = raw.decode('utf-8')
+    ldif_unwrapped = ldif.replace(ATTR_WRAP, '')
+    entries = ldif_unwrapped.split(ENTRY_SEP)
+    for entry in entries[:-1]:
+        if entry == '':
+            print('is empty')
+            continue
+#    for entry in entries[:10]:
+#        dn = entry.split('\n', 1)[0].split(': ', 1)[1]
+#        uuid = entry.split('\nentryUUID: ', 1)[1].split('\n', 1)[0]
+        m = rgx.search(entry)
+        uuid = None
+        if m:
+            uuid = m.group(1)
+#             uuid = m.group('uuid')
+#             dn = m.group('dn')
+#             print(uuid, dn)
+        fpath = ''.join([backup_dir, uuid, '.ldif'])
+#        fout = open(fpath, 'w')
+#        fout.write(''.join([entry, ENTRY_SEP]))
+#        fout.close()
 #    with open(backup_dir + 'db.yaml', 'w') as yaml_file:
 #        yaml.dump(dit.get_entry_map(), yaml_file, default_flow_style=False)
 
