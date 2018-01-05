@@ -9,7 +9,7 @@ import git
 import collections
 import configparser
 
-def main( argv ):
+def main(argv):
     # Define default parameter values
     defaults = {
         'ldif_cmd': '/usr/sbin/slapcat -n 1 -o ldif-wrap=no',
@@ -88,8 +88,11 @@ def main( argv ):
     ATTR_WRAP = '\n '
     rgx_uuid = re.compile(r'\nentryUUID: ([^\n]+)')
     if param['exclude_attrs']:
-        regex = r'\n(' + param['exclude_attrs'] + r'): [^\n]+'
+        regex = r'(' + param['exclude_attrs'] + r'): '
         rgx_excl = re.compile(regex)
+        excl = True
+    else:
+        excl = False
 
     # Clean up ldif command
     ldif_cmd = re.sub('\s+', ' ', param['ldif_cmd']).split(' ')
@@ -107,31 +110,49 @@ def main( argv ):
         else:
             last_commit_files = [f.name for f in repo.head.commit.tree.blobs]
 
-    # Dump LDAP database to memory
-    raw = subprocess.Popen(ldif_cmd,
-            stdout=subprocess.PIPE).communicate()[0]
-    ldif = raw.decode('utf-8')
-    ldif_unwrapped = ldif.replace(ATTR_WRAP, '')
-    if param['exclude_attrs']:
-        ldif_filtered = rgx_excl.sub('', ldif_unwrapped)
-        entries = ldif_filtered.split(ENTRY_SEP)
-    else:
-        entries = ldif_unwrapped.split(ENTRY_SEP)
-
-    # Write LDIF files
     new_commit_files = []
-    for entry in entries[:-1]:
-        match_uuid = rgx_uuid.search(entry)
-        if not match_uuid:
-            sys.exit('Error: no entryUUID attribute found!' +
-                    '\n\nEntry:\n\n' + entry)
-        uuid = match_uuid.group(1)
-        fname = ''.join([uuid, '.ldif'])
-        fpath = ''.join([dpath, fname])
-        fout = open(fpath, 'w')
-        fout.write(''.join([entry, ENTRY_SEP]))
-        fout.close()
-        new_commit_files.append(fname)
+
+    # Stream from LDIF input and write LDIF files
+    with subprocess.Popen(ldif_cmd, stdout=subprocess.PIPE) as p:
+        entry = ''
+        attr = ''
+        uuid = None
+        while True:
+            output = p.stdout.readline()
+            if not output and p.poll() is not None:
+                break
+            line = output.decode('utf-8')
+            if line == '\n':
+                if not uuid:
+                    sys.exit('Error: no entryUUID attribute found!' +
+                        '\n\nEntry:\n\n' + entry)
+                entry = ''.join([entry, attr.rstrip()])
+                # Write LDIF file
+                fname = ''.join([uuid, '.ldif'])
+                fpath = ''.join([dpath, fname])
+                print(uuid)
+                with open(fpath, 'w') as fout:
+                    fout.write(''.join([entry, ENTRY_SEP]))
+                new_commit_files.append(fname)
+                # Prepare local variables for next entry
+                entry = ''
+                attr = ''
+                uuid = None
+                continue
+            elif line.startswith('entryUUID: '):
+                uuid = line.split('entryUUID: ', 1)[1].rstrip()
+            if excl:
+                match_excl = rgx_excl.match(line)
+                if match_excl:
+                    continue
+            if line.startswith(' '):
+                attr = ''.join([attr.rstrip(), line[1:]])
+            else:
+                entry = ''.join([entry, attr])
+                attr = ''
+                attr = ''.join([attr, line])
+        rc = p.poll()
+        #print('exit_code:', str(rc))
 
     # Add new LDIF files to index (stage)
     repo.index.add(new_commit_files)
