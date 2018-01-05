@@ -87,21 +87,21 @@ def main( argv ):
     ENTRY_SEP = '\n\n'
     ATTR_WRAP = '\n '
     rgx_uuid = re.compile(r'\nentryUUID: ([^\n]+)')
-    if args.exclude_attrs:
-        regex = r'\n(' + args.exclude_attrs + r'): [^\n]+'
+    if param['exclude_attrs']:
+        regex = r'\n(' + param['exclude_attrs'] + r'): [^\n]+'
         rgx_excl = re.compile(regex)
 
     # Clean up ldif command
-    ldif_cmd = re.sub('\s+', ' ', args.ldif_cmd).split(' ')
+    ldif_cmd = re.sub('\s+', ' ', param['ldif_cmd']).split(' ')
 
     # Create backup directory
-    dpath = pathlib.PosixPath(args.backup_dir)
+    dpath = pathlib.PosixPath(param['backup_dir'])
     dpath.mkdir(mode=0o700, parents=True, exist_ok=True)
     dpath = ''.join([dpath.as_posix(), '/'])
 
     # Initialize git repo, get file list from last commit
     repo = git.Repo.init(dpath)
-    if not args.no_rm:
+    if not param['no_rm']:
         if len(repo.heads) == 0:
             last_commit_files = []
         else:
@@ -112,7 +112,7 @@ def main( argv ):
             stdout=subprocess.PIPE).communicate()[0]
     ldif = raw.decode('utf-8')
     ldif_unwrapped = ldif.replace(ATTR_WRAP, '')
-    if args.exclude_attrs:
+    if param['exclude_attrs']:
         ldif_filtered = rgx_excl.sub('', ldif_unwrapped)
         entries = ldif_filtered.split(ENTRY_SEP)
     else:
@@ -137,16 +137,16 @@ def main( argv ):
     repo.index.add(new_commit_files)
 
     # Remove unneeded LDIF files from index
-    if not args.no_rm:
+    if not param['no_rm']:
         to_remove_files = set(last_commit_files) - set(new_commit_files)
         if to_remove_files:
             repo.index.remove(to_remove_files, working_tree=True)
 
     # Commit the changes
-    repo.index.commit(args.commit_msg)
+    repo.index.commit(param['commit_msg'])
 
     # Clean up the repo
-    if not args.no_gc:
+    if not param['no_gc']:
         repo.git.gc('--auto')
 
 if __name__== "__main__":
