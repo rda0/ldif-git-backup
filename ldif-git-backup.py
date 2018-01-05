@@ -115,6 +115,7 @@ def main(argv):
     ldif_from_file = False
     ldif_wrapped = False
     exclude_attrs = False
+    single_ldif = False
     if not param['ldif_stdin']:
         if not param['ldif_cmd']:
             if param['ldif_file']:
@@ -128,6 +129,8 @@ def main(argv):
         regex = r'(' + param['exclude_attrs'] + r'): '
         rgx_excl = re.compile(regex)
         exclude_attrs = True
+    if param['single_ldif']:
+        single_ldif = True
 
     # Clean up ldif command
     ldif_cmd = re.sub('\s+', ' ', param['ldif_cmd']).split(' ')
@@ -156,101 +159,68 @@ def main(argv):
         fin = sys.stdin
 
     # Stream from LDIF input and write LDIF files
-    entry = ''
-    attr = ''
-    uuid = None
-    if param['single_ldif']:
+    if single_ldif:
         # Open LDIF file for writing
         fname = ''.join(['db', '.ldif'])
         fpath = ''.join([dpath, fname])
         new_commit_files.append(fname)
-        with open(fpath, 'w') as fout:
-            while True:
-                line = fin.readline()
-                # Exit the loop when finished reading
-                if not line:
-                    break
-                # Optional decode bytes from subprocess
-                if ldif_from_cmd:
-                    line = line.decode('utf-8')
-                # End of an entry
-                if line == '\n':
-                    if ldif_wrapped:
-                        entry = ''.join([entry, attr])
-                    # Write LDIF file
-                    fout.write(''.join([entry, '\n']))
-                    # Prepare local variables for next entry
-                    entry = ''
-                    attr = ''
-                    uuid = None
-                    continue
-                # Get the entryUUID
-                elif line.startswith('entryUUID: '):
-                    uuid = line.split('entryUUID: ', 1)[1].rstrip()
-                # Filter out attributes
-                if exclude_attrs:
-                    match_excl = rgx_excl.match(line)
-                    if match_excl:
-                        continue
-                # Append the lines to theentry
-                if ldif_wrapped:
-                    if line.startswith(' '):
-                        attr = ''.join([attr.rstrip(), line[1:]])
-                    else:
-                        entry = ''.join([entry, attr])
-                        attr = ''
-                        attr = ''.join([attr, line])
-                else:
-                    entry = ''.join([entry, line])
-    else:
-        while True:
-            line = fin.readline()
-            # Exit the loop when finished reading
-            if not line:
-                break
-            # Optional decode bytes from subprocess
-            if ldif_from_cmd:
-                line = line.decode('utf-8')
-            # End of an entry
-            if line == '\n':
-                if not uuid:
-                    sys.exit('Error: no entryUUID attribute found!' +
-                        '\n\nEntry:\n\n' + entry)
-                if ldif_wrapped:
-                    entry = ''.join([entry, attr])
-                # Write LDIF file
+        fout = open(fpath, 'w')
+    entry = ''
+    attr = ''
+    uuid = None
+    while True:
+        line = fin.readline()
+        # Exit the loop when finished reading
+        if not line:
+            break
+        # Optional decode bytes from subprocess
+        if ldif_from_cmd:
+            line = line.decode('utf-8')
+        # End of an entry
+        if line == '\n':
+            if not uuid:
+                sys.exit('Error: no entryUUID attribute found!' +
+                    '\n\nEntry:\n\n' + entry)
+            if ldif_wrapped:
+                entry = ''.join([entry, attr])
+            # Write LDIF file
+            if not single_ldif:
                 fname = ''.join([uuid, '.ldif'])
                 fpath = ''.join([dpath, fname])
                 with open(fpath, 'w') as fout:
                     fout.write(''.join([entry, '\n']))
                 new_commit_files.append(fname)
-                # Prepare local variables for next entry
-                entry = ''
-                attr = ''
-                uuid = None
-                continue
-            # Get the entryUUID
-            elif line.startswith('entryUUID: '):
-                uuid = line.split('entryUUID: ', 1)[1].rstrip()
-            # Filter out attributes
-            if exclude_attrs:
-                match_excl = rgx_excl.match(line)
-                if match_excl:
-                    continue
-            # Append the lines to theentry
-            if ldif_wrapped:
-                if line.startswith(' '):
-                    attr = ''.join([attr.rstrip(), line[1:]])
-                else:
-                    entry = ''.join([entry, attr])
-                    attr = ''
-                    attr = ''.join([attr, line])
             else:
-                entry = ''.join([entry, line])
+                fout.write(''.join([entry, '\n']))
+            # Prepare local variables for next entry
+            entry = ''
+            attr = ''
+            uuid = None
+            continue
+        # Get the entryUUID
+        elif line.startswith('entryUUID: '):
+            uuid = line.split('entryUUID: ', 1)[1].rstrip()
+        # Filter out attributes
+        if exclude_attrs:
+            match_excl = rgx_excl.match(line)
+            if match_excl:
+                continue
+        # Append the lines to theentry
+        if ldif_wrapped:
+            if line.startswith(' '):
+                attr = ''.join([attr.rstrip(), line[1:]])
+            else:
+                entry = ''.join([entry, attr])
+                attr = ''
+                attr = ''.join([attr, line])
+        else:
+            entry = ''.join([entry, line])
 
-    # Close file
+    # Close files
     if ldif_from_file:
         fin.close()
+    if single_ldif:
+        fout.close()
 
     # Add new LDIF files to index (stage)
     repo.index.add(new_commit_files)
