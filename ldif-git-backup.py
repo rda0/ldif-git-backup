@@ -21,6 +21,7 @@ def main(argv):
         'backup_dir': '/var/backups/ldap',
         'commit_msg': 'ldif-git-backup',
         'excl_attrs': '',
+        'ldif_attr': '',
         'no_gc': False,
         'no_rm': False,
         'single_ldif': False,
@@ -30,13 +31,19 @@ def main(argv):
 
     # Parse cmd-line arguments
     parser = argparse.ArgumentParser(add_help=False,
-            description='Backup OpenLDAP databases using Git')
+            description='''Backup LDAP databases in LDIF format using Git.
+            The LDIF (Lightweight Directory Interchange Format) input can be
+            read either from stdin, subprocess or file. Care must be taken to
+            use the correct parameters, which create the LDIF input. By default
+            ldif-git-backup will split the LDIF to entries and save each entry
+            in a file named after the entry's UUID. If these defaults are used,
+            the LDIF must contain operational attributes or at least
+            `entryUUID`.''')
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('-x', '--ldif-cmd',
             dest='ldif_cmd',
             type=str,
-            help='A command which returns an LDAP database in LDIF format '
-            'including operational attributes or at least entryUUID')
+            help='Read LDIF from subprocess')
     group.add_argument('-l', '--ldif-file',
             dest='ldif_file',
             type=str,
@@ -58,9 +65,18 @@ def main(argv):
             dest='excl_attrs',
             type=str,
             help='Exclude all attributes matching the regular expression')
+    parser.add_argument('-a', '--ldif-attr',
+            dest='ldif_attr',
+            type=str,
+            help='Attribute to use as filename. The value of this attribute'
+            ' will be used as filename. Attribute must be present in all '
+            'entries and must be unique in the LDIF. This parameter has no '
+            'effect if combined with `-s`. If the attribute is not present in '
+            'the entry, the whole entry will be silently skipped. If the '
+            'attribute is not unique, bad things could happen as entries will '
+            'overwrite eachother. Default: `entryUUID` (always unique)')
     parser.add_argument('-c', '--config',
             dest='config',
-#            default='default',
             type=str,
             help='Use configuration named CONFIG (section name)')
     parser.add_argument('-f', '--config-file',
@@ -139,8 +155,8 @@ def main(argv):
     # Create param dict with chained default values
     param = collections.ChainMap(filtered_args, config, defaults)
 
-    for k, v in param.items():
-        print(k + ':', v)
+#    for k, v in param.items():
+#        print(k + ':', v)
 #    sys.exit('stop')
 
     # Define flags, compile regular expressions
@@ -148,6 +164,7 @@ def main(argv):
     ldif_from_file = False
     ldif_wrapped = False
     excl_attrs = False
+    ldif_attr = 'entryUUID'
     single_ldif = False
     if not param['ldif_stdin']:
         if not param['ldif_cmd']:
@@ -157,17 +174,17 @@ def main(argv):
             ldif_from_cmd = True
     if param['ldif_wrap']:
         ldif_wrapped = True
-    rgx_uuid = re.compile(r'\nentryUUID: ([^\n]+)')
     if param['excl_attrs']:
         regex = r'(' + param['excl_attrs'] + r'): '
         rgx_excl = re.compile(regex)
         excl_attrs = True
+    if param['ldif_attr']:
+        ldif_attr = param['ldif_attr']
     if param['single_ldif']:
         single_ldif = True
 
     # Clean up ldif command
     ldif_cmd = re.sub('\s+', ' ', param['ldif_cmd']).split(' ')
-    print('clean_ldif_cmd', ldif_cmd)
 
     # Create backup directory
     dpath = pathlib.PosixPath(param['backup_dir'])
@@ -201,7 +218,8 @@ def main(argv):
         fout = open(fpath, 'w')
     entry = ''
     attr = ''
-    uuid = None
+    fname_attr_val = None
+    fname_attr_search = ''.join([ldif_attr, ': '])
     while True:
         line = fin.readline()
         # Exit the loop when finished reading
@@ -216,10 +234,12 @@ def main(argv):
                 entry = ''.join([entry, attr])
             # Write LDIF file
             if not single_ldif:
-                if not uuid:
-                    sys.exit('Error: no entryUUID attribute found!' +
-                        '\n\nEntry:\n\n' + entry)
-                fname = ''.join([uuid, '.ldif'])
+                if not fname_attr_val:
+                    entry = ''
+                    attr = ''
+                    fname_attr_val = None
+                    continue
+                fname = ''.join([fname_attr_val, '.ldif'])
                 fpath = ''.join([dpath, fname])
                 with open(fpath, 'w') as fout:
                     fout.write(''.join([entry, '\n']))
@@ -229,11 +249,11 @@ def main(argv):
             # Prepare local variables for next entry
             entry = ''
             attr = ''
-            uuid = None
+            fname_attr_val = None
             continue
         # Get the entryUUID
-        elif line.startswith('entryUUID: '):
-            uuid = line.split('entryUUID: ', 1)[1].rstrip()
+        elif line.startswith(fname_attr_search):
+            fname_attr_val = line.split(fname_attr_search, 1)[1].rstrip()
         # Filter out attributes
         if excl_attrs:
             match_excl = rgx_excl.match(line)
