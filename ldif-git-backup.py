@@ -20,10 +20,11 @@ def main(argv):
         'ldif_stdin': False,
         'backup_dir': '/var/backups/ldap',
         'commit_msg': 'ldif-git-backup',
-        'exclude_attrs': '',
+        'excl_attrs': '',
         'no_gc': False,
         'no_rm': False,
         'single_ldif': False,
+        'ldif_name': 'db',
         'ldif_wrap': False,
     }
 
@@ -31,7 +32,7 @@ def main(argv):
     parser = argparse.ArgumentParser(add_help=False,
             description='Backup OpenLDAP databases using Git')
     group = parser.add_mutually_exclusive_group(required=False)
-    group.add_argument('-c', '--ldif-cmd',
+    group.add_argument('-x', '--ldif-cmd',
             dest='ldif_cmd',
             type=str,
             help='A command which returns an LDAP database in LDIF format '
@@ -40,7 +41,7 @@ def main(argv):
             dest='ldif_file',
             type=str,
             help='Read LDIF from file')
-    group.add_argument('-i', '--stdin',
+    group.add_argument('-i', '--ldif-stdin',
             dest='stdin',
             action='store_const',
             const=True,
@@ -53,35 +54,45 @@ def main(argv):
             dest='commit_msg',
             type=str,
             help='The commit message')
-    parser.add_argument('-e', '--exclude-attrs',
-            dest='exclude_attrs',
+    parser.add_argument('-e', '--excl-attrs',
+            dest='excl_attrs',
             type=str,
             help='Exclude all attributes matching the regular expression')
-    parser.add_argument('--no-gc',
+    parser.add_argument('-c', '--config',
+            dest='config',
+#            default='default',
+            type=str,
+            help='Use configuration named CONFIG (section name)')
+    parser.add_argument('-f', '--config-file',
+            dest='config_file',
+            type=str,
+            help='Path to the configuration file')
+    parser.add_argument('-G', '--no-gc',
             dest='no_gc',
             action='store_const',
             const=True,
-            help='Do not perform a garbage collection')
-    parser.add_argument('--no-rm',
+            help='Do not perform garbage collection')
+    parser.add_argument('-R', '--no-rm',
             dest='no_rm',
             action='store_const',
             const=True,
-            help='Do not perform a git rm')
+            help='Do not perform git rm')
     parser.add_argument('-s', '--single-ldif',
             dest='single_ldif',
             action='store_const',
             const=True,
             help='Store in single LDIF, do not split to files')
+    parser.add_argument('-n', '--ldif-name',
+            dest='ldif_name',
+            type=str,
+            help='Filename to use in single-ldif mode (default: db)')
     parser.add_argument('-w', '--ldif-wrap',
             dest='ldif_wrap',
             action='store_const',
             const=True,
-            help='LDIF input is wrapped')
-    parser.add_argument('-f', '--config-file',
-            dest='config_file',
-            default='ldif-git-backup.conf',
-            type=str,
-            help='Path to the config file')
+            help='Set if LDIF input is wrapped, this will unwrap any wrapped '
+            'attributes. By default the input LDIF is expected to be unwrapped '
+            'for optimal performance')
     parser.add_argument('-h', '--help',
             action='help',
             help='Show this help message and exit')
@@ -89,20 +100,38 @@ def main(argv):
     filtered_args = {k: v for k, v in args.items() if v}
 
     # Parse configuration file
-    parsed_config = configparser.ConfigParser()
-    parsed_config.sections()
-    parsed_config.read(args['config_file'])
-    parsed_config.sections()
-    try:
-        config = {k: v for k, v in parsed_config['default'].items() if v}
-    except KeyError:
+    cinterpol = configparser.ExtendedInterpolation()
+    cparser = configparser.ConfigParser(interpolation=cinterpol)
+    if args['config_file']:
+        cpath = pathlib.PosixPath(args['config_file'])
+        if cpath.is_file():
+            cparser.read(args['config_file'])
+        else:
+             sys.exit('Error: invalid config file')
+    else:
+        cparser.read('ldif-git-backup.conf')
+    if args['config']:
+        if cparser.has_section(args['config']):
+            config_params = cparser[args['config']].items()
+            print('section', args['config'])
+        else:
+            sys.exit('Error: no config section named %s' % args['config'])
+    elif cparser.has_section('ldif-git-backup'):
+        config_params = cparser['ldif-git-backup'].items()
+        print('section', 'ldif-git-backup')
+    else:
+        config_params = None
+        print('no config')
+    if config_params:
+        config = {k: v for k, v in config_params if v}
+    else:
         config = {}
     defaults_bool = [k for k, v in defaults.items() if type(v) == bool]
     for k in defaults_bool:
         if k in config:
             if config[k].lower() == 'true':
                 config[k] = True
-            elif config[k] == 'false':
+            elif config[k].lower() == 'false':
                 config[k] = False
             else:
                 del config[k]
@@ -110,11 +139,15 @@ def main(argv):
     # Create param dict with chained default values
     param = collections.ChainMap(filtered_args, config, defaults)
 
+    for k, v in param.items():
+        print(k + ':', v)
+#    sys.exit('stop')
+
     # Define flags, compile regular expressions
     ldif_from_cmd = False
     ldif_from_file = False
     ldif_wrapped = False
-    exclude_attrs = False
+    excl_attrs = False
     single_ldif = False
     if not param['ldif_stdin']:
         if not param['ldif_cmd']:
@@ -125,15 +158,16 @@ def main(argv):
     if param['ldif_wrap']:
         ldif_wrapped = True
     rgx_uuid = re.compile(r'\nentryUUID: ([^\n]+)')
-    if param['exclude_attrs']:
-        regex = r'(' + param['exclude_attrs'] + r'): '
+    if param['excl_attrs']:
+        regex = r'(' + param['excl_attrs'] + r'): '
         rgx_excl = re.compile(regex)
-        exclude_attrs = True
+        excl_attrs = True
     if param['single_ldif']:
         single_ldif = True
 
     # Clean up ldif command
     ldif_cmd = re.sub('\s+', ' ', param['ldif_cmd']).split(' ')
+    print('clean_ldif_cmd', ldif_cmd)
 
     # Create backup directory
     dpath = pathlib.PosixPath(param['backup_dir'])
@@ -158,10 +192,10 @@ def main(argv):
     else:
         fin = sys.stdin
 
-    # Stream from LDIF input and write LDIF files
+    # Stream from LDIF input and write LDIF output
     if single_ldif:
         # Open LDIF file for writing
-        fname = ''.join(['db', '.ldif'])
+        fname = ''.join([param['ldif_name'], '.ldif'])
         fpath = ''.join([dpath, fname])
         new_commit_files.append(fname)
         fout = open(fpath, 'w')
@@ -178,13 +212,13 @@ def main(argv):
             line = line.decode('utf-8')
         # End of an entry
         if line == '\n':
-            if not uuid:
-                sys.exit('Error: no entryUUID attribute found!' +
-                    '\n\nEntry:\n\n' + entry)
             if ldif_wrapped:
                 entry = ''.join([entry, attr])
             # Write LDIF file
             if not single_ldif:
+                if not uuid:
+                    sys.exit('Error: no entryUUID attribute found!' +
+                        '\n\nEntry:\n\n' + entry)
                 fname = ''.join([uuid, '.ldif'])
                 fpath = ''.join([dpath, fname])
                 with open(fpath, 'w') as fout:
@@ -201,11 +235,11 @@ def main(argv):
         elif line.startswith('entryUUID: '):
             uuid = line.split('entryUUID: ', 1)[1].rstrip()
         # Filter out attributes
-        if exclude_attrs:
+        if excl_attrs:
             match_excl = rgx_excl.match(line)
             if match_excl:
                 continue
-        # Append the lines to theentry
+        # Append the lines to entry
         if ldif_wrapped:
             if line.startswith(' '):
                 attr = ''.join([attr.rstrip(), line[1:]])
