@@ -157,7 +157,7 @@ def main(argv):
         if cpath.is_file():
             cparser.read(args['config_file'])
         else:
-             sys.exit('Error: invalid config file')
+            sys.exit('Error: invalid config file')
     else:
         cparser.read('ldif-git-backup.conf')
     if args['config']:
