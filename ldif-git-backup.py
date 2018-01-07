@@ -10,9 +10,13 @@ import collections
 import configparser
 import time
 
-def main(argv):
-    starttime = time.perf_counter()
+# Print current execution time and status message
+def verbose(starttime, *messages):
+    currenttime = time.perf_counter()
+    runtime = currenttime - starttime
+    print(''.join(['', '%0.3f' % runtime, 's:']), ' '.join(messages))
 
+def main(argv):
     # Define default parameter values
     defaults = {
         'ldif_cmd': '',
@@ -121,11 +125,26 @@ def main(argv):
             help='Set if LDIF input is wrapped, this will unwrap any wrapped '
             'attributes. By default the input LDIF is expected to be unwrapped '
             'for optimal performance')
+    parser.add_argument('-v', '--verbose',
+            dest='verbose',
+            action='store_const',
+            const=True,
+            help='enable verbose mode')
+    parser.add_argument('-p', '--print-params',
+            dest='print_params',
+            action='store_const',
+            const=True,
+            help='print parameters and exit')
     parser.add_argument('-h', '--help',
             action='help',
             help='Show this help message and exit')
     args = vars(parser.parse_args())
     filtered_args = {k: v for k, v in args.items() if v}
+
+    # Start measuring runtime
+    if args['verbose']:
+        starttime = time.perf_counter()
+        verbose(starttime, 'starting runtime measurement')
 
     # Parse configuration file
     cinterpol = configparser.ExtendedInterpolation()
@@ -164,8 +183,18 @@ def main(argv):
     # Create param dict with chained default values
     param = collections.ChainMap(filtered_args, config, defaults)
 
-#    for k, v in param.items():
-#        print(k + ':', v)
+    # Print active parameters
+    if args['verbose'] or args['print_params']:
+        pad_len = 0
+        if args['verbose']:
+            verbose(starttime, 'parameters:')
+            pad_len = 12
+        col_width = max(len(str(k)) for k in param.keys()) + 3
+        for k, v in param.items():
+            print(''.join([' ' * pad_len,
+                ''.join([str(k), ':']).ljust(col_width), str(v)]))
+        if args['print_params']:
+            sys.exit()
 
     # Define flags, compile regular expressions
     ldif_from_cmd = False
@@ -193,6 +222,9 @@ def main(argv):
 
     # Clean up ldif command
     ldif_cmd = re.sub('\s+', ' ', param['ldif_cmd']).split(' ')
+    if args['verbose']:
+        if ldif_cmd:
+            verbose(starttime, 'cleaned up ldif_cmd:', ' '.join(ldif_cmd))
 
     # Create backup directory
     dpath = pathlib.PosixPath(param['backup_dir'])
@@ -202,6 +234,8 @@ def main(argv):
     # Initialize git repo, get file list from last commit
     if not (param['no_rm'] and param['no_add'] and param['no_gc'] and
             param['no_commit']):
+        if args['verbose']:
+            verbose(starttime, 'initializing git repo:', dpath)
         repo = git.Repo.init(dpath)
     new_commit_files = []
     if not param['no_rm']:
@@ -209,27 +243,44 @@ def main(argv):
             last_commit_files = []
         else:
             last_commit_files = [f.name for f in repo.head.commit.tree.blobs]
+        if args['verbose']:
+            verbose(starttime, 'files in repository:',
+                    str(len(last_commit_files)))
 
     # Determine LDIF input method
     if ldif_from_file:
         fin = open(param['ldif_file'], 'r')
+        if args['verbose']:
+            verbose(starttime, 'reading ldif from file')
     elif ldif_from_cmd:
         p = subprocess.Popen(ldif_cmd, stdout=subprocess.PIPE)
         fin = p.stdout
+        if args['verbose']:
+            verbose(starttime, 'reading ldif from subprocess')
     else:
         fin = sys.stdin
+        if args['verbose']:
+            verbose(starttime, 'reading ldif from stdin')
 
     # Stream from LDIF input and write LDIF output
+    entry = ''
+    attr = ''
+    fname_attr_val = None
+    fname_attr_search = ''.join([ldif_attr, ': '])
     if single_ldif:
         # Open LDIF file for writing
         fname = ''.join([param['ldif_name'], '.ldif'])
         fpath = ''.join([dpath, fname])
         new_commit_files.append(fname)
         fout = open(fpath, 'w')
-    entry = ''
-    attr = ''
-    fname_attr_val = None
-    fname_attr_search = ''.join([ldif_attr, ': '])
+        if args['verbose']:
+            verbose(starttime, 'single-ldif mode, writing to:', fname)
+    else:
+        if args['verbose']:
+            verbose(starttime, 'multi-ldif mode, writing to:',
+                    ''.join(['<', ldif_attr, '>', '.ldif']))
+    if args['verbose']:
+        verbose(starttime, 'processing ldif...')
     while True:
         line = fin.readline()
         # Exit the loop when finished reading
@@ -288,26 +339,33 @@ def main(argv):
 
     # Add new LDIF files to index (stage)
     if not param['no_add']:
+        if args['verbose']:
+            verbose(starttime, 'adding git files:', str(len(new_commit_files)))
         repo.index.add(new_commit_files)
 
     # Remove unneeded LDIF files from index
     if not param['no_rm']:
         to_remove_files = set(last_commit_files) - set(new_commit_files)
+        if args['verbose']:
+            verbose(starttime, 'removing git files:', str(len(to_remove_files)))
         if to_remove_files:
             repo.index.remove(to_remove_files, working_tree=True)
 
     # Commit the changes
     if not param['no_commit']:
+        if args['verbose']:
+            verbose(starttime, 'commiting git files')
         repo.index.commit(param['commit_msg'])
 
     # Clean up the repo
     if not param['no_gc']:
+        if args['verbose']:
+            verbose(starttime, 'triggering git garbage collection')
         repo.git.gc('--auto')
 
-    # Measure execution time
-    endtime = time.perf_counter()
-    runtime = endtime - starttime
-    print('runtime:', str(runtime), 's')
+    # Print execution time
+    if args['verbose']:
+        verbose(starttime, 'exiting...')
 
 if __name__== "__main__":
     main(sys.argv)
