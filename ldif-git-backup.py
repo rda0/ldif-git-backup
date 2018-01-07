@@ -24,6 +24,8 @@ def main(argv):
         'ldif_attr': '',
         'no_gc': False,
         'no_rm': False,
+        'no_add': False,
+        'no_commit': False,
         'single_ldif': False,
         'ldif_name': 'db',
         'ldif_wrap': False,
@@ -93,6 +95,16 @@ def main(argv):
             action='store_const',
             const=True,
             help='Do not perform git rm')
+    parser.add_argument('-A', '--no-add',
+            dest='no_add',
+            action='store_const',
+            const=True,
+            help='Do not perform git add')
+    parser.add_argument('-C', '--no-commit',
+            dest='no_commit',
+            action='store_const',
+            const=True,
+            help='Do not perform git commit')
     parser.add_argument('-s', '--single-ldif',
             dest='single_ldif',
             action='store_const',
@@ -129,15 +141,12 @@ def main(argv):
     if args['config']:
         if cparser.has_section(args['config']):
             config_params = cparser[args['config']].items()
-            print('section', args['config'])
         else:
             sys.exit('Error: no config section named %s' % args['config'])
     elif cparser.has_section('ldif-git-backup'):
         config_params = cparser['ldif-git-backup'].items()
-        print('section', 'ldif-git-backup')
     else:
         config_params = None
-        print('no config')
     if config_params:
         config = {k: v for k, v in config_params if v}
     else:
@@ -157,7 +166,6 @@ def main(argv):
 
 #    for k, v in param.items():
 #        print(k + ':', v)
-#    sys.exit('stop')
 
     # Define flags, compile regular expressions
     ldif_from_cmd = False
@@ -192,7 +200,9 @@ def main(argv):
     dpath = ''.join([dpath.as_posix(), '/'])
 
     # Initialize git repo, get file list from last commit
-    repo = git.Repo.init(dpath)
+    if not (param['no_rm'] and param['no_add'] and param['no_gc'] and
+            param['no_commit']):
+        repo = git.Repo.init(dpath)
     new_commit_files = []
     if not param['no_rm']:
         if len(repo.heads) == 0:
@@ -277,7 +287,8 @@ def main(argv):
         fout.close()
 
     # Add new LDIF files to index (stage)
-    repo.index.add(new_commit_files)
+    if not param['no_add']:
+        repo.index.add(new_commit_files)
 
     # Remove unneeded LDIF files from index
     if not param['no_rm']:
@@ -286,7 +297,8 @@ def main(argv):
             repo.index.remove(to_remove_files, working_tree=True)
 
     # Commit the changes
-    repo.index.commit(param['commit_msg'])
+    if not param['no_commit']:
+        repo.index.commit(param['commit_msg'])
 
     # Clean up the repo
     if not param['no_gc']:
