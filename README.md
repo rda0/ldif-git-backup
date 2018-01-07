@@ -128,13 +128,13 @@ Do the same using `ldapsearch`:
 For best performance use method `stdin` and `grep`:
 
 ```
-/usr/sbin/slapcat -n 1 -o ldif-wrap=no | grep -vE '(enetry|context)CSN|.*?Timestamp' | ./ldif-git-backup.py
+/usr/sbin/slapcat -n 1 -o ldif-wrap=no | grep -vE '(entry|context)CSN|.*?Timestamp' | ./ldif-git-backup.py
 ```
 
 Or without `grep`:
 
 ```
-./ldif-git-backup.py -x '/usr/sbin/slapcat -n 1 -o ldif-wrap=no' -e '(enetry|context)CSN|.*?Timestamp'
+./ldif-git-backup.py -x '/usr/sbin/slapcat -n 1 -o ldif-wrap=no' -e '(entry|context)CSN|.*?Timestamp'
 ```
 
 ### Working with wrapped LDIF input
@@ -155,7 +155,7 @@ To specify a configuration from another location use:
 ./ldif-git-backup.py -f path/to/config.conf
 ```
 
-The example configuration [ldif-git-backup.conf](ldif-git-backup.conf) contains some examples named configuration sections and explanation.
+The example configuration [ldif-git-backup.conf](ldif-git-backup.conf) contains some example named configuration sections and explanations.
 ldif-git-backup uses the `configparser` paython module with extended interpolation enabled. See [python docs](https://docs.python.org/3/library/configparser.html) for more details on how to use this syntax.
 To use the example named configurations, use the following parameters.
 
