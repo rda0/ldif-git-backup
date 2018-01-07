@@ -16,6 +16,7 @@ def verbose(starttime, *messages):
     runtime = currenttime - starttime
     print(''.join(['', '%0.3f' % runtime, 's:']), ' '.join(messages))
 
+#@profile
 def main(argv):
     # Define default parameter values
     defaults = {
@@ -46,6 +47,11 @@ def main(argv):
             the LDIF must contain operational attributes or at least
             `entryUUID`.''')
     group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument('-i', '--ldif-stdin',
+            dest='stdin',
+            action='store_const',
+            const=True,
+            help='Read LDIF from stdin (default)')
     group.add_argument('-x', '--ldif-cmd',
             dest='ldif_cmd',
             type=str,
@@ -54,19 +60,15 @@ def main(argv):
             dest='ldif_file',
             type=str,
             help='Read LDIF from file')
-    group.add_argument('-i', '--ldif-stdin',
-            dest='stdin',
-            action='store_const',
-            const=True,
-            help='Read LDIF from stdin (default)')
     parser.add_argument('-d', '--backup-dir',
             dest='backup_dir',
             type=str,
-            help='The directory for the git backup repository')
+            help='The directory for the git backup repository (default:'
+            '`/var/backups/ldap`)')
     parser.add_argument('-m', '--commit-msg',
             dest='commit_msg',
             type=str,
-            help='The commit message')
+            help='The commit message (default: `ldif-git-backup`)')
     parser.add_argument('-e', '--excl-attrs',
             dest='excl_attrs',
             type=str,
@@ -80,7 +82,7 @@ def main(argv):
             'effect if combined with `-s`. If the attribute is not present in '
             'the entry, the whole entry will be silently skipped. If the '
             'attribute is not unique, bad things could happen as entries will '
-            'overwrite eachother. Default: `entryUUID` (always unique)')
+            'overwrite eachother. (default: `entryUUID`)')
     parser.add_argument('-c', '--config',
             dest='config',
             type=str,
@@ -88,7 +90,8 @@ def main(argv):
     parser.add_argument('-f', '--config-file',
             dest='config_file',
             type=str,
-            help='Path to the configuration file')
+            help='Path to the configuration file (default: '
+            '`./ldif-git-backup.conf`)')
     parser.add_argument('-G', '--no-gc',
             dest='no_gc',
             action='store_const',

@@ -12,7 +12,7 @@ Based on [ldap-git-backup](https://github.com/elmar/ldap-git-backup), modified a
 ## Usage
 
 ```
-usage: ldif-git-backup.py [-x LDIF_CMD | -l LDIF_FILE | -i] [-d BACKUP_DIR]
+usage: ldif-git-backup.py [-i | -x LDIF_CMD | -l LDIF_FILE] [-d BACKUP_DIR]
                           [-m COMMIT_MSG] [-e EXCL_ATTRS] [-a LDIF_ATTR]
                           [-c CONFIG] [-f CONFIG_FILE] [-G] [-R] [-A] [-C]
                           [-s] [-n LDIF_NAME] [-w] [-v] [-p] [-h]
@@ -25,15 +25,16 @@ each entry in a file named after the entry's UUID. If these defaults are used,
 the LDIF must contain operational attributes or at least `entryUUID`.
 
 optional arguments:
+  -i, --ldif-stdin      Read LDIF from stdin (default)
   -x LDIF_CMD, --ldif-cmd LDIF_CMD
                         Read LDIF from subprocess
   -l LDIF_FILE, --ldif-file LDIF_FILE
                         Read LDIF from file
-  -i, --ldif-stdin      Read LDIF from stdin (default)
   -d BACKUP_DIR, --backup-dir BACKUP_DIR
                         The directory for the git backup repository
+                        (default:`/var/backups/ldap`)
   -m COMMIT_MSG, --commit-msg COMMIT_MSG
-                        The commit message
+                        The commit message (default: `ldif-git-backup`)
   -e EXCL_ATTRS, --excl-attrs EXCL_ATTRS
                         Exclude all attributes matching the regular expression
   -a LDIF_ATTR, --ldif-attr LDIF_ATTR
@@ -44,12 +45,12 @@ optional arguments:
                         the attribute is not present in the entry, the whole
                         entry will be silently skipped. If the attribute is
                         not unique, bad things could happen as entries will
-                        overwrite eachother. Default: `entryUUID` (always
-                        unique)
+                        overwrite eachother. (default: `entryUUID`)
   -c CONFIG, --config CONFIG
                         Use configuration named CONFIG (section name)
   -f CONFIG_FILE, --config-file CONFIG_FILE
-                        Path to the configuration file
+                        Path to the configuration file (default: `./ldif-git-
+                        backup.conf`)
   -G, --no-gc           Do not perform garbage collection
   -R, --no-rm           Do not perform git rm
   -A, --no-add          Do not perform git add
@@ -63,4 +64,24 @@ optional arguments:
   -v, --verbose         enable verbose mode
   -p, --print-params    print parameters and exit
   -h, --help            Show this help message and exit
+```
+
+## Example usage
+
+Read from stdin:
+
+```
+/usr/sbin/slapcat -n 1 -o ldif-wrap=no | ./ldif-git-backup.py
+```
+
+Read from stdin and write files named after users:
+
+```
+/usr/sbin/slapcat -n 1 -o ldif-wrap=no -s ou=people,dc=phys,dc=ethz,dc=ch | ./ldif-git-backup.py -d /var/backups/ldap/users -a uid
+```
+
+Using subprocess:
+
+```
+./ldif-git-backup.py -x '/usr/sbin/slapcat -n 1 -o ldif-wrap=no'
 ```
