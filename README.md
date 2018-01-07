@@ -146,7 +146,7 @@ This will unwrap all attributes. Otherwise any attribute filtering will not work
 /usr/sbin/slapcat -n 1 | ./ldif-git-backup.py -w -e '(enetry|context)CSN|.*?Timestamp'
 ```
 
-### Using a named configuration
+### Using the configuration file
 
 By default the configuration file `./ldif-git-backup.conf` is read and parsed if present.
 To specify a configuration from another location use:
@@ -154,6 +154,9 @@ To specify a configuration from another location use:
 ```
 ./ldif-git-backup.py -f path/to/config.conf
 ```
+
+The special configuration section named `DEFAULT` can be used to set the default options for all other named configuration sections if they do not explicitly specify a configuration option. The special configuration section named `ldif-git-backup` can be used to specify the default paramters for `ldif-git-backup.py` if not specified as command-line arguments. Any command-line arguments take precedence over configuration options.
+Any other configuration section names can be used to specify sets of configurations to be used with the option `-c <section_name>`.
 
 The example configuration [ldif-git-backup.conf](ldif-git-backup.conf) contains some example named configuration sections and explanations.
 ldif-git-backup uses the `configparser` paython module with extended interpolation enabled. See [python docs](https://docs.python.org/3/library/configparser.html) for more details on how to use this syntax.
