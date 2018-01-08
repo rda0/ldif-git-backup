@@ -10,13 +10,14 @@ import collections
 import configparser
 import time
 
+
 # Print current execution time and status message
 def verbose(starttime, *messages):
     currenttime = time.perf_counter()
     runtime = currenttime - starttime
     print(''.join(['', '%0.3f' % runtime, 's:']), ' '.join(messages))
 
-#@profile
+
 def main(argv):
     # Define default parameter values
     defaults = {
@@ -44,8 +45,8 @@ def main(argv):
             use the correct parameters, which create the LDIF input. By default
             ldif-git-backup will split the LDIF to entries and save each entry
             in a file named after the entry's UUID. If these defaults are used,
-            the LDIF must contain operational attributes or at least
-            `entryUUID`.''')
+            the LDIF must contain operational attributes or at least the
+            `entryUUID` attribute.''')
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('-i', '--ldif-stdin',
             dest='stdin',
@@ -72,26 +73,37 @@ def main(argv):
     parser.add_argument('-e', '--excl-attrs',
             dest='excl_attrs',
             type=str,
-            help='Exclude all attributes matching the regular expression')
+            help='''Exclude all attributes matching the regular expression
+            `^(EXCLUDE_ATTRS): `''')
     parser.add_argument('-a', '--ldif-attr',
             dest='ldif_attr',
             type=str,
-            help='Attribute to use as filename. The value of this attribute'
-            ' will be used as filename. Attribute must be present in all '
-            'entries and must be unique in the LDIF. This parameter has no '
-            'effect if combined with `-s`. If the attribute is not present in '
-            'the entry, the whole entry will be silently skipped. If the '
-            'attribute is not unique, bad things could happen as entries will '
-            'overwrite eachother. (default: `entryUUID`)')
+            help='''The value of attribute LDIF_ATTR will be used as filename.
+            This attribute must be unique in the LDIF. If the attribute is not
+            present in the entry, the whole entry will be silently skipped.
+            This parameter has no effect if combined with `-s`. If the
+            attribute is not unique, bad things will happen, as entries will
+            overwrite eachother. (default: `entryUUID`)''')
+    parser.add_argument('-s', '--single-ldif',
+            dest='single_ldif',
+            action='store_const',
+            const=True,
+            help='Use single LDIF mode, do not split entries to files')
+    parser.add_argument('-n', '--ldif-name',
+            dest='ldif_name',
+            type=str,
+            help='''Use LDIF_NAME as filename in single-ldif mode (default:
+            `db`)''')
     parser.add_argument('-c', '--config',
             dest='config',
             type=str,
-            help='Use configuration named CONFIG (section name)')
+            help='''Use configuration with saection name CONFIG (default:
+            `ldif-git-backup`)''')
     parser.add_argument('-f', '--config-file',
             dest='config_file',
             type=str,
-            help='Path to the configuration file (default: '
-            '`./ldif-git-backup.conf`)')
+            help='''Path to the configuration file (default:
+            `./ldif-git-backup.conf`)''')
     parser.add_argument('-G', '--no-gc',
             dest='no_gc',
             action='store_const',
@@ -112,32 +124,23 @@ def main(argv):
             action='store_const',
             const=True,
             help='Do not perform git commit')
-    parser.add_argument('-s', '--single-ldif',
-            dest='single_ldif',
-            action='store_const',
-            const=True,
-            help='Store in single LDIF, do not split to files')
-    parser.add_argument('-n', '--ldif-name',
-            dest='ldif_name',
-            type=str,
-            help='Filename to use in single-ldif mode (default: db)')
     parser.add_argument('-w', '--ldif-wrap',
             dest='ldif_wrap',
             action='store_const',
             const=True,
-            help='Set if LDIF input is wrapped, this will unwrap any wrapped '
-            'attributes. By default the input LDIF is expected to be unwrapped '
-            'for optimal performance')
+            help='''Set if LDIF input is wrapped, this will unwrap any wrapped
+            attributes. By default the input LDIF is expected to be unwrapped
+            for optimal performance''')
     parser.add_argument('-v', '--verbose',
             dest='verbose',
             action='store_const',
             const=True,
-            help='enable verbose mode')
+            help='Enable verbose mode')
     parser.add_argument('-p', '--print-params',
             dest='print_params',
             action='store_const',
             const=True,
-            help='print parameters and exit')
+            help='Print active parameters and exit')
     parser.add_argument('-h', '--help',
             action='help',
             help='Show this help message and exit')
@@ -295,21 +298,20 @@ def main(argv):
         # End of an entry
         if line == '\n':
             if ldif_wrapped:
+                # Add last attribute (part)
                 entry = ''.join([entry, attr])
             # Write LDIF file
-            if not single_ldif:
-                if not fname_attr_val:
-                    entry = ''
-                    attr = ''
-                    fname_attr_val = None
-                    continue
-                fname = ''.join([fname_attr_val, '.ldif'])
-                fpath = ''.join([dpath, fname])
-                with open(fpath, 'w') as fout:
-                    fout.write(''.join([entry, '\n']))
-                new_commit_files.append(fname)
-            else:
+            if single_ldif:
+                # Add entry to single LDIF file
                 fout.write(''.join([entry, '\n']))
+            else:
+                # Write entry to new LDIF file
+                if fname_attr_val:
+                    fname = ''.join([fname_attr_val, '.ldif'])
+                    fpath = ''.join([dpath, fname])
+                    with open(fpath, 'w') as fout:
+                        fout.write(''.join([entry, '\n']))
+                    new_commit_files.append(fname)
             # Prepare local variables for next entry
             entry = ''
             attr = ''
