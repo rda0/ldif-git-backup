@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
+"""Script to backup LDAP databases in LDIF format using Git"""
 
 import sys
 import subprocess
 import re
 import argparse
 import pathlib
-import git
 import collections
 import configparser
 import time
+import git
 
 
-# Print current execution time and status message
 def verbose(starttime, *messages):
+    """Print current execution time and status message"""
     currenttime = time.perf_counter()
     runtime = currenttime - starttime
     print(''.join(['', '%0.3f' % runtime, 's:']), ' '.join(messages))
 
 
-def main(argv):
+def main():
+    """The main function"""
     # Define default parameter values
     defaults = {
         'ldif_cmd': '',
@@ -38,112 +40,123 @@ def main(argv):
     }
 
     # Parse cmd-line arguments
-    parser = argparse.ArgumentParser(add_help=False,
-            description='''Backup LDAP databases in LDIF format using Git.
-            The LDIF (Lightweight Directory Interchange Format) input can be
-            read either from stdin, subprocess or file. Care must be taken to
-            use the correct parameters, which create the LDIF input. By default
-            ldif-git-backup will split the LDIF to entries and save each entry
-            in a file named after the entry's UUID. If these defaults are used,
-            the LDIF must contain operational attributes or at least the
-            `entryUUID` attribute.''')
+    parser = argparse.ArgumentParser(
+        add_help=False, description='''Backup LDAP databases in LDIF format
+        using Git. The LDIF (Lightweight Directory Interchange Format) input
+        can be read either from stdin, subprocess or file. Care must be taken
+        to use the correct parameters, which create the LDIF input. By default
+        ldif-git-backup will split the LDIF to entries and save each entry in a
+        file named after the entry's UUID. If these defaults are used, the LDIF
+        must contain operational attributes or at least the `entryUUID`
+        attribute.'''
+    )
     group = parser.add_mutually_exclusive_group(required=False)
-    group.add_argument('-i', '--ldif-stdin',
-            dest='stdin',
-            action='store_const',
-            const=True,
-            help='Read LDIF from stdin (default)')
-    group.add_argument('-x', '--ldif-cmd',
-            dest='ldif_cmd',
-            type=str,
-            help='Read LDIF from subprocess')
-    group.add_argument('-l', '--ldif-file',
-            dest='ldif_file',
-            type=str,
-            help='Read LDIF from file')
-    parser.add_argument('-d', '--backup-dir',
-            dest='backup_dir',
-            type=str,
-            help='The directory for the git backup repository (default:'
-            '`/var/backups/ldap`)')
-    parser.add_argument('-m', '--commit-msg',
-            dest='commit_msg',
-            type=str,
-            help='The commit message (default: `ldif-git-backup`)')
-    parser.add_argument('-e', '--excl-attrs',
-            dest='excl_attrs',
-            type=str,
-            help='''Exclude all attributes matching the regular expression
-            `^(EXCLUDE_ATTRS): `''')
-    parser.add_argument('-a', '--ldif-attr',
-            dest='ldif_attr',
-            type=str,
-            help='''The value of attribute LDIF_ATTR will be used as filename.
-            This attribute must be unique in the LDIF. If the attribute is not
-            present in the entry, the whole entry will be silently skipped.
-            This parameter has no effect if combined with `-s`. If the
-            attribute is not unique, bad things will happen, as entries will
-            overwrite eachother. (default: `entryUUID`)''')
-    parser.add_argument('-s', '--single-ldif',
-            dest='single_ldif',
-            action='store_const',
-            const=True,
-            help='Use single LDIF mode, do not split entries to files')
-    parser.add_argument('-n', '--ldif-name',
-            dest='ldif_name',
-            type=str,
-            help='''Use LDIF_NAME as filename in single-ldif mode (default:
-            `db`)''')
-    parser.add_argument('-c', '--config',
-            dest='config',
-            type=str,
-            help='''Use configuration with saection name CONFIG (default:
-            `ldif-git-backup`)''')
-    parser.add_argument('-f', '--config-file',
-            dest='config_file',
-            type=str,
-            help='''Path to the configuration file (default:
-            `./ldif-git-backup.conf`)''')
-    parser.add_argument('-G', '--no-gc',
-            dest='no_gc',
-            action='store_const',
-            const=True,
-            help='Do not perform garbage collection')
-    parser.add_argument('-R', '--no-rm',
-            dest='no_rm',
-            action='store_const',
-            const=True,
-            help='Do not perform git rm')
-    parser.add_argument('-A', '--no-add',
-            dest='no_add',
-            action='store_const',
-            const=True,
-            help='Do not perform git add')
-    parser.add_argument('-C', '--no-commit',
-            dest='no_commit',
-            action='store_const',
-            const=True,
-            help='Do not perform git commit')
-    parser.add_argument('-w', '--ldif-wrap',
-            dest='ldif_wrap',
-            action='store_const',
-            const=True,
-            help='''Set if LDIF input is wrapped, this will unwrap any wrapped
-            attributes. By default the input LDIF is expected to be unwrapped
-            for optimal performance''')
-    parser.add_argument('-v', '--verbose',
-            dest='verbose',
-            action='store_const',
-            const=True,
-            help='Enable verbose mode')
-    parser.add_argument('-p', '--print-params',
-            dest='print_params',
-            action='store_const',
-            const=True,
-            help='Print active parameters and exit')
-    parser.add_argument('-h', '--help',
-            action='help',
-            help='Show this help message and exit')
+    group.add_argument(
+        '-i', '--ldif-stdin',
+        dest='stdin', action='store_const', const=True,
+        help='Read LDIF from stdin (default)'
+    )
+    group.add_argument(
+        '-x', '--ldif-cmd',
+        dest='ldif_cmd', type=str,
+        help='Read LDIF from subprocess'
+    )
+    group.add_argument(
+        '-l', '--ldif-file',
+        dest='ldif_file', type=str,
+        help='Read LDIF from file'
+    )
+    parser.add_argument(
+        '-d', '--backup-dir',
+        dest='backup_dir', type=str,
+        help='''The directory for the git backup repository (default:
+        `/var/backups/ldap`)'''
+    )
+    parser.add_argument(
+        '-m', '--commit-msg',
+        dest='commit_msg', type=str,
+        help='The commit message (default: `ldif-git-backup`)'
+    )
+    parser.add_argument(
+        '-e', '--excl-attrs',
+        dest='excl_attrs', type=str,
+        help='''Exclude all attributes matching the regular expression
+        `^(EXCLUDE_ATTRS): `'''
+    )
+    parser.add_argument(
+        '-a', '--ldif-attr',
+        dest='ldif_attr', type=str,
+        help='''The value of attribute LDIF_ATTR will be used as filename. This
+        attribute must be unique in the LDIF. If the attribute is not present
+        in the entry, the whole entry will be silently skipped. This parameter
+        has no effect if combined with `-s`. If the attribute is not unique,
+        bad things will happen, as entries will overwrite eachother. (default:
+        `entryUUID`)'''
+    )
+    parser.add_argument(
+        '-s', '--single-ldif',
+        dest='single_ldif', action='store_const', const=True,
+        help='Use single LDIF mode, do not split entries to files'
+    )
+    parser.add_argument(
+        '-n', '--ldif-name',
+        dest='ldif_name', type=str,
+        help='Use LDIF_NAME as filename in single-ldif mode (default: `db`)'
+    )
+    parser.add_argument(
+        '-c', '--config',
+        dest='config', type=str,
+        help='''Use configuration with saection name CONFIG (default:
+        `ldif-git-backup`)'''
+    )
+    parser.add_argument(
+        '-f', '--config-file',
+        dest='config_file', type=str,
+        help='''Path to the configuration file (default:
+        `./ldif-git-backup.conf`)'''
+    )
+    parser.add_argument(
+        '-G', '--no-gc',
+        dest='no_gc', action='store_const', const=True,
+        help='Do not perform garbage collection'
+    )
+    parser.add_argument(
+        '-R', '--no-rm',
+        dest='no_rm', action='store_const', const=True,
+        help='Do not perform git rm'
+    )
+    parser.add_argument(
+        '-A', '--no-add',
+        dest='no_add', action='store_const', const=True,
+        help='Do not perform git add'
+    )
+    parser.add_argument(
+        '-C', '--no-commit',
+        dest='no_commit', action='store_const', const=True,
+        help='Do not perform git commit'
+    )
+    parser.add_argument(
+        '-w', '--ldif-wrap',
+        dest='ldif_wrap', action='store_const', const=True,
+        help='''Set if LDIF input is wrapped, this will unwrap any wrapped
+        attributes. By default the input LDIF is expected to be unwrapped for
+        optimal performance'''
+    )
+    parser.add_argument(
+        '-v', '--verbose',
+        dest='verbose', action='store_const', const=True,
+        help='Enable verbose mode'
+    )
+    parser.add_argument(
+        '-p', '--print-params',
+        dest='print_params', action='store_const', const=True,
+        help='Print active parameters and exit'
+    )
+    parser.add_argument(
+        '-h', '--help',
+        action='help',
+        help='Show this help message and exit'
+    )
     args = vars(parser.parse_args())
     filtered_args = {k: v for k, v in args.items() if v}
 
@@ -176,7 +189,7 @@ def main(argv):
         config = {k: v for k, v in config_params if v}
     else:
         config = {}
-    defaults_bool = [k for k, v in defaults.items() if type(v) == bool]
+    defaults_bool = [k for k, v in defaults.items() if isinstance(v, bool)]
     for k in defaults_bool:
         if k in config:
             if config[k].lower() == 'true':
@@ -196,9 +209,10 @@ def main(argv):
             verbose(starttime, 'parameters:')
             pad_len = 12
         col_width = max(len(str(k)) for k in param.keys()) + 3
-        for k, v in param.items():
-            print(''.join([' ' * pad_len,
-                ''.join([str(k), ':']).ljust(col_width), str(v)]))
+        for key, value in param.items():
+            col_left = ''.join([str(key), ':']).ljust(col_width)
+            col_right = str(value)
+            print(''.join([' ' * pad_len, col_left, col_right]))
         if args['print_params']:
             sys.exit()
 
@@ -227,7 +241,7 @@ def main(argv):
         single_ldif = True
 
     # Clean up ldif command
-    ldif_cmd = re.sub('\s+', ' ', param['ldif_cmd']).split(' ')
+    ldif_cmd = re.sub(r'\s+', ' ', param['ldif_cmd']).split(' ')
     if args['verbose']:
         if ldif_cmd:
             verbose(starttime, 'cleaned up ldif_cmd:', ' '.join(ldif_cmd))
@@ -235,14 +249,14 @@ def main(argv):
     # Create backup directory
     dpath = pathlib.PosixPath(param['backup_dir'])
     dpath.mkdir(mode=0o700, parents=True, exist_ok=True)
-    dpath = ''.join([dpath.as_posix(), '/'])
+    path_prefix = ''.join([dpath.as_posix(), '/'])
 
     # Initialize git repo, get file list from last commit
     if not (param['no_rm'] and param['no_add'] and param['no_gc'] and
             param['no_commit']):
         if args['verbose']:
-            verbose(starttime, 'initializing git repo:', dpath)
-        repo = git.Repo.init(dpath)
+            verbose(starttime, 'initializing git repo:', path_prefix)
+        repo = git.Repo.init(path_prefix)
     new_commit_files = []
     if not param['no_rm']:
         if len(repo.heads) == 0:
@@ -259,8 +273,8 @@ def main(argv):
         if args['verbose']:
             verbose(starttime, 'reading ldif from file')
     elif ldif_from_cmd:
-        p = subprocess.Popen(ldif_cmd, stdout=subprocess.PIPE)
-        fin = p.stdout
+        proc = subprocess.Popen(ldif_cmd, stdout=subprocess.PIPE)
+        fin = proc.stdout
         if args['verbose']:
             verbose(starttime, 'reading ldif from subprocess')
     else:
@@ -276,7 +290,7 @@ def main(argv):
     if single_ldif:
         # Open LDIF file for writing
         fname = ''.join([param['ldif_name'], '.ldif'])
-        fpath = ''.join([dpath, fname])
+        fpath = ''.join([path_prefix, fname])
         new_commit_files.append(fname)
         fout = open(fpath, 'w')
         if args['verbose']:
@@ -308,7 +322,7 @@ def main(argv):
                 # Write entry to new LDIF file
                 if fname_attr_val:
                     fname = ''.join([fname_attr_val, '.ldif'])
-                    fpath = ''.join([dpath, fname])
+                    fpath = ''.join([path_prefix, fname])
                     with open(fpath, 'w') as fout:
                         fout.write(''.join([entry, '\n']))
                     new_commit_files.append(fname)
@@ -331,8 +345,7 @@ def main(argv):
                 attr = ''.join([attr.rstrip(), line[1:]])
             else:
                 entry = ''.join([entry, attr])
-                attr = ''
-                attr = ''.join([attr, line])
+                attr = line
         else:
             entry = ''.join([entry, line])
 
@@ -372,5 +385,6 @@ def main(argv):
     if args['verbose']:
         verbose(starttime, 'exiting...')
 
-if __name__== "__main__":
-    main(sys.argv)
+
+if __name__ == "__main__":
+    main()
