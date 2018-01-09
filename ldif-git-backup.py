@@ -49,7 +49,6 @@ class Context(object):
             'last_commit_files': None,
         }
         self.start_time_measurement()
-        self.print_start_time()
         self.initialize_param()
         self.print_active_parameters()
         self.initialize_input_method()
@@ -249,28 +248,24 @@ class Context(object):
 
     def verbose(self, *messages):
         """Print current execution time and status message"""
-        current_time = time.perf_counter()
-        elapsed_time = current_time - self.var['start_time']
-        print(''.join(['', '%0.3f' % elapsed_time, 's:']), ' '.join(messages))
+        if self.arg['verbose']:
+            current_time = time.perf_counter()
+            elapsed_time = current_time - self.var['start_time']
+            print(''.join(['', '%0.3f' % elapsed_time, 's:']), ' '.join(messages))
 
     def start_time_measurement(self):
         """Set the start time"""
         if self.arg['verbose']:
             self.var['start_time'] = time.perf_counter()
+        self.verbose('start runtime measurement')
 
     def end_time_measurement(self):
         """Print execution time"""
-        if self.arg['verbose']:
-            self.verbose('execution finished')
-
-    def print_start_time(self):
-        """Start measuring runtime"""
-        if self.arg['verbose']:
-            self.verbose('starting runtime measurement')
+        self.verbose('execution finished')
 
     def print_active_parameters(self):
         """Print active parameters"""
-        if self.arg['verbose'] or self.arg['print_params']:
+        if self.arg['print_params']:
             pad_len = 0
             if self.arg['verbose']:
                 self.verbose('parameters:')
@@ -307,8 +302,7 @@ class Context(object):
         ldif_cmd = self.param['ldif_cmd']
         if ldif_cmd:
             clean_ldif_cmd = re.sub(r'\s+', ' ', ldif_cmd)
-            if self.arg['verbose']:
-                self.verbose('cleaned up ldif_cmd:', clean_ldif_cmd)
+            self.verbose('cleaned up ldif_cmd:', clean_ldif_cmd)
             self.param['ldif_cmd'] = clean_ldif_cmd.split(' ')
 
 
@@ -322,13 +316,11 @@ def create_backup_directory(context):
 def initialize_git_repository(context):
     """Initialize git repo, get file list from last commit"""
     param = context.param
-    arg = context.arg
     var = context.var
 
     if not (param['no_rm'] and param['no_add'] and param['no_gc'] and
             param['no_commit']):
-        if arg['verbose']:
-            context.verbose('initializing git repo:', var['path_prefix'])
+        context.verbose('initializing git repo:', var['path_prefix'])
         repo = git.Repo.init(var['path_prefix'])
         context.var['repo'] = repo
 
@@ -338,9 +330,8 @@ def initialize_git_repository(context):
         else:
             files_in_repo_root = repo.head.commit.tree.blobs
             var['last_commit_files'] = [f.name for f in files_in_repo_root]
-        if arg['verbose']:
-            context.verbose('files in repository:',
-                            str(len(var['last_commit_files'])))
+        context.verbose('files in repository:',
+                        str(len(var['last_commit_files'])))
 
 
 class LdifDeque(object):
@@ -367,37 +358,28 @@ class LdifDeque(object):
 def get_input_method(context):
     """Determine LDIF input method and return file descriptor"""
     param = context.param
-    arg = context.arg
 
     if param['ldif_file']:
         fin = open(param['ldif_file'], 'r')
-        if arg['verbose']:
-            context.verbose('reading ldif from file')
+        context.verbose('reading ldif from file')
     elif param['ldif_cmd']:
         proc = subprocess.Popen(param['ldif_cmd'], stdout=subprocess.PIPE)
         fin = proc.stdout
-        if arg['verbose']:
-            context.verbose('reading ldif from subprocess')
+        context.verbose('reading ldif from subprocess')
     else:
         fin = sys.stdin
-        if arg['verbose']:
-            context.verbose('reading ldif from stdin')
+        context.verbose('reading ldif from stdin')
     if param['ldif_mem']:
-        if arg['verbose']:
-            context.verbose('read input to memory')
-            ldif = LdifDeque()
+        context.verbose('read input to memory')
+        ldif = LdifDeque()
         while True:
             line = fin.readline()
             if not line:
                 break
             ldif.addline(line)
         fin.close()
-        if arg['verbose']:
-            context.verbose('ldif loaded to memory:',
-                            str(len(ldif.lines)), 'lines')
-        if arg['verbose']:
-            context.verbose('restart time measurement')
-            context.start_time_measurement()
+        context.verbose('ldif loaded:', str(len(ldif.lines)), 'lines')
+        context.start_time_measurement()
         return ldif
     else:
         return fin
@@ -405,7 +387,6 @@ def get_input_method(context):
 
 def get_output_method(context):
     """"Determine LDIF output method and return file descriptor"""
-    arg = context.arg
     param = context.param
     var = context.var
     files = []
@@ -416,13 +397,11 @@ def get_output_method(context):
         fpath = ''.join([var['path_prefix'], fname])
         files.append(fname)
         fout = open(fpath, 'w')
-        if arg['verbose']:
-            context.verbose('single-ldif mode, writing to:', fname)
+        context.verbose('single-ldif mode, writing to:', fname)
         return fout, files
     else:
-        if arg['verbose']:
-            context.verbose('multi-ldif mode, writing to:',
-                            ''.join(['<', param['ldif_attr'], '>', '.ldif']))
+        context.verbose('multi-ldif mode, writing to:',
+                        ''.join(['<', param['ldif_attr'], '>', '.ldif']))
         return None, files
 
 
@@ -595,8 +574,7 @@ def git_add(context):
     if not context.param['no_add']:
         repo = context.var['repo']
         new_commit_files = context.var['new_commit_files']
-        if context.arg['verbose']:
-            context.verbose('adding git files:', str(len(new_commit_files)))
+        context.verbose('adding git files:', str(len(new_commit_files)))
         repo.index.add(new_commit_files)
 
 
@@ -607,8 +585,7 @@ def git_remove(context):
         last_commit_files = context.var['last_commit_files']
         new_commit_files = context.var['new_commit_files']
         to_remove_files = set(last_commit_files) - set(new_commit_files)
-        if context.arg['verbose']:
-            context.verbose('removing git files:', str(len(to_remove_files)))
+        context.verbose('removing git files:', str(len(to_remove_files)))
         if to_remove_files:
             repo.index.remove(to_remove_files, working_tree=True)
 
@@ -617,8 +594,7 @@ def git_commit(context):
     """Commit the changes"""
     if not context.param['no_commit']:
         repo = context.var['repo']
-        if context.arg['verbose']:
-            context.verbose('commiting git files')
+        context.verbose('commiting git files')
         repo.index.commit(context.param['commit_msg'])
 
 
@@ -626,8 +602,7 @@ def git_garbage_collect(context):
     """Clean up the repo"""
     if not context.param['no_gc']:
         repo = context.var['repo']
-        if context.arg['verbose']:
-            context.verbose('triggering git garbage collection')
+        context.verbose('triggering git garbage collection')
         repo.git.gc('--auto')
 
 
