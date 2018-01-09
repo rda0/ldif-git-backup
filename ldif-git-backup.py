@@ -426,91 +426,131 @@ class LoopVariables(object):
         self.rgx_excl = var['rgx_excl']
 
 
-def write_ldif(loop_var, fout, entry, fname_attr_val, files):
+def write_ldif(var, fout, entry, fname_attr_val, files):
     """Write the LDIF"""
-    if loop_var.single_ldif:
+    if var.single_ldif:
         # Add entry to single LDIF file
         fout.write(''.join([entry, '\n']))
     else:
         # Write entry to new LDIF file
         if fname_attr_val:
             fname = ''.join([fname_attr_val, '.ldif'])
-            fpath = ''.join([loop_var.path_prefix, fname])
+            fpath = ''.join([var.path_prefix, fname])
             with open(fpath, 'w') as fout:
                 fout.write(''.join([entry, '\n']))
             files.append(fname)
 
 
-def clean_up_loop(context, fin, fout, files):
-    """Clean up loop"""
-    if not context.param['single_ldif']:
-        context.var['new_commit_files'] = files
-    close_file_descriptors(fin, fout)
+#def is_filtered(excl_attrs, rgx_excl, attr):
+#    if excl_attrs:
+#        match_excl = rgx_excl.match(attr)
+#        if match_excl:
+#            return True
+#    return False
 
 
-def process_ldif(context):
+def loop_unwrap(var, fin, fout):
     """Stream from LDIF input and write LDIF output"""
-    # Local variables to speed up processing
-    loop_var = LoopVariables(context)
     files = []
-
-    # Stream from LDIF input and write LDIF output
     entry, attr = '', ''
     fname_attr_val = None
-    fin = get_input_method(context)
-    fout = get_output_method(context)
     while True:
         line = fin.readline()
         # Exit the loop when finished reading
         if not line:
             break
         # Optional decode bytes from subprocess
-        if loop_var.ldif_cmd:
+        if var.ldif_cmd:
             line = line.decode('utf-8')
         # End of an entry
         if line == '\n':
-            if loop_var.ldif_wrap:
-                # Get value of attribute for use as filename
-                if line.startswith(loop_var.fname_attr_search):
-                    fname_attr_val = line.split(loop_var.fname_attr_search, 1)[1].rstrip()
-                # Filter out attributes
-                if loop_var.excl_attrs:
-                    match_excl = loop_var.rgx_excl.match(attr)
-                    if not match_excl:
-                        # Add last attribute (part)
-                        entry = ''.join([entry, attr])
+            # Get value of attribute for use as filename
+            if attr.startswith(var.fname_attr_search):
+                fname_attr_val = attr.split(var.fname_attr_search, 1)[1].rstrip()
+            # Filter out attributes
+#            if not is_filtered(var.excl_attrs, var.rgx_excl, attr):
+#                # Add last attribute (part)
+#                entry = ''.join([entry, attr])
+            if var.excl_attrs:
+                match_excl = var.rgx_excl.match(attr)
+                if not match_excl:
+                    # Add last attribute (part)
+                    entry = ''.join([entry, attr])
             # Write LDIF file
-            write_ldif(loop_var, fout, entry, fname_attr_val, files)
+            write_ldif(var, fout, entry, fname_attr_val, files)
             # Prepare local variables for next entry
             entry, attr = '', ''
             fname_attr_val = None
             continue
         # Append the lines to entry
-        if loop_var.ldif_wrap:
-            if line.startswith(' '):
-                attr = ''.join([attr.rstrip(), line[1:]])
-            else:
-                # Get value of attribute for use as filename
-                if line.startswith(loop_var.fname_attr_search):
-                    fname_attr_val = line.split(loop_var.fname_attr_search, 1)[1].rstrip()
-                # Filter out attributes
-                if loop_var.excl_attrs:
-                    match_excl = loop_var.rgx_excl.match(attr)
-                    if not match_excl:
-                        entry = ''.join([entry, attr])
-                attr = line
+        if line.startswith(' '):
+            attr = ''.join([attr.rstrip(), line[1:]])
         else:
             # Get value of attribute for use as filename
-            if line.startswith(loop_var.fname_attr_search):
-                fname_attr_val = line.split(loop_var.fname_attr_search, 1)[1].rstrip()
+            if attr.startswith(var.fname_attr_search):
+                fname_attr_val = attr.split(var.fname_attr_search, 1)[1].rstrip()
             # Filter out attributes
-            if loop_var.excl_attrs:
-                match_excl = loop_var.rgx_excl.match(line)
-                if match_excl:
-                    continue
-            entry = ''.join([entry, line])
+#            if not is_filtered(var.excl_attrs, var.rgx_excl, attr):
+#                entry = ''.join([entry, attr])
+            if var.excl_attrs:
+                match_excl = var.rgx_excl.match(attr)
+                if not match_excl:
+                    entry = ''.join([entry, attr])
+            attr = line
 
-    clean_up_loop(context, fin, fout, files)
+    return files
+
+
+def loop(var, fin, fout):
+    """Stream from LDIF input and write LDIF output"""
+    files = []
+    entry = ''
+    fname_attr_val = None
+    while True:
+        line = fin.readline()
+        # Exit the loop when finished reading
+        if not line:
+            break
+        # Optional decode bytes from subprocess
+        if var.ldif_cmd:
+            line = line.decode('utf-8')
+        # End of an entry
+        if line == '\n':
+            # Write LDIF file
+            write_ldif(var, fout, entry, fname_attr_val, files)
+            # Prepare for next entry
+            entry = ''
+            fname_attr_val = None
+            continue
+        # Get value of attribute for use as filename
+        if line.startswith(var.fname_attr_search):
+            fname_attr_val = line.split(var.fname_attr_search, 1)[1].rstrip()
+        # Filter out attributes
+        if var.excl_attrs:
+            match_excl = var.rgx_excl.match(line)
+            if match_excl:
+                continue
+        # Append the lines to entry
+        entry = ''.join([entry, line])
+
+    return files
+
+
+def process_ldif(context):
+    """Process LDIF with method depending on the parameters"""
+    # Local variables to speed up processing
+    loop_var = LoopVariables(context)
+    fin = get_input_method(context)
+    fout = get_output_method(context)
+
+    if not context.param['ldif_wrap']:
+        files = loop(loop_var, fin, fout)
+    else:
+        files = loop_unwrap(loop_var, fin, fout)
+
+    if not context.param['single_ldif']:
+        context.var['new_commit_files'] = files
+    close_file_descriptors(fin, fout)
 
 
 def git_add(context):
