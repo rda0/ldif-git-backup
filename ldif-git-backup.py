@@ -357,21 +357,22 @@ def get_output_method(context):
     arg = context.arg
     param = context.param
     var = context.var
+    files = []
 
     if param['single_ldif']:
         # Open LDIF file for writing
         fname = ''.join([param['ldif_name'], '.ldif'])
         fpath = ''.join([var['path_prefix'], fname])
-        var['new_commit_files'].append(fname)
+        files.append(fname)
         fout = open(fpath, 'w')
         if arg['verbose']:
             context.verbose('single-ldif mode, writing to:', fname)
-        return fout
+        return fout, files
     else:
         if arg['verbose']:
             context.verbose('multi-ldif mode, writing to:',
                             ''.join(['<', param['ldif_attr'], '>', '.ldif']))
-        return None
+        return None, files
 
 
 def close_file_descriptors(fin, fout):
@@ -391,6 +392,7 @@ class LoopVariables(object):
         self.path_prefix = None
         self.fname_attr_search = None
         self.rgx_excl = None
+        self.files = []
         self.init_vars(context)
 #        self.new_commit_files
 #        self.entry = ''
@@ -441,17 +443,8 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
             files.append(fname)
 
 
-#def is_filtered(excl_attrs, rgx_excl, attr):
-#    if excl_attrs:
-#        match_excl = rgx_excl.match(attr)
-#        if match_excl:
-#            return True
-#    return False
-
-
-def loop_unwrap(var, fin, fout):
+def loop_unwrap(var, fin, fout, files):
     """Stream from LDIF input and write LDIF output"""
-    files = []
     entry, attr = '', ''
     fname_attr_val = None
     while True:
@@ -468,9 +461,6 @@ def loop_unwrap(var, fin, fout):
             if attr.startswith(var.fname_attr_search):
                 fname_attr_val = attr.split(var.fname_attr_search, 1)[1].rstrip()
             # Filter out attributes
-#            if not is_filtered(var.excl_attrs, var.rgx_excl, attr):
-#                # Add last attribute (part)
-#                entry = ''.join([entry, attr])
             if var.excl_attrs:
                 match_excl = var.rgx_excl.match(attr)
                 if not match_excl:
@@ -490,8 +480,6 @@ def loop_unwrap(var, fin, fout):
             if attr.startswith(var.fname_attr_search):
                 fname_attr_val = attr.split(var.fname_attr_search, 1)[1].rstrip()
             # Filter out attributes
-#            if not is_filtered(var.excl_attrs, var.rgx_excl, attr):
-#                entry = ''.join([entry, attr])
             if var.excl_attrs:
                 match_excl = var.rgx_excl.match(attr)
                 if not match_excl:
@@ -501,9 +489,8 @@ def loop_unwrap(var, fin, fout):
     return files
 
 
-def loop(var, fin, fout):
+def loop(var, fin, fout, files):
     """Stream from LDIF input and write LDIF output"""
-    files = []
     entry = ''
     fname_attr_val = None
     while True:
@@ -541,15 +528,14 @@ def process_ldif(context):
     # Local variables to speed up processing
     loop_var = LoopVariables(context)
     fin = get_input_method(context)
-    fout = get_output_method(context)
+    fout, files = get_output_method(context)
 
     if not context.param['ldif_wrap']:
-        files = loop(loop_var, fin, fout)
+        files = loop(loop_var, fin, fout, files)
     else:
-        files = loop_unwrap(loop_var, fin, fout)
+        files = loop_unwrap(loop_var, fin, fout, files)
 
-    if not context.param['single_ldif']:
-        context.var['new_commit_files'] = files
+    context.var['new_commit_files'] = files
     close_file_descriptors(fin, fout)
 
 
