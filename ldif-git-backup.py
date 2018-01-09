@@ -34,6 +34,8 @@ class Context(object):
         'single_ldif': False,
         'ldif_name': 'db',
         'ldif_wrap': False,
+        'ldif_mem': False,
+        'no_out': False,
     }
 
     def __init__(self):
@@ -154,11 +156,21 @@ class Context(object):
             help='Do not perform git commit'
         )
         parser.add_argument(
+            '-O', '--no-out',
+            dest='no_out', action='store_const', const=True,
+            help='Do not write output LDIF file(s)'
+        )
+        parser.add_argument(
             '-w', '--ldif-wrap',
             dest='ldif_wrap', action='store_const', const=True,
             help='''Set if LDIF input is wrapped, this will unwrap any wrapped
             attributes. By default the input LDIF is expected to be unwrapped
             for optimal performance'''
+        )
+        parser.add_argument(
+            '--mem',
+            dest='ldif_mem', action='store_const', const=True,
+            help='Read input LDIF to memory'
         )
         parser.add_argument(
             '-v', '--verbose',
@@ -331,6 +343,27 @@ def initialize_git_repository(context):
                             str(len(var['last_commit_files'])))
 
 
+class LdifDeque(object):
+    """Class to store LDIF in memory as deque"""
+    def __init__(self):
+        self.lines = collections.deque()
+
+    def addline(self, line):
+        """Add a line"""
+        self.lines.append(line)
+
+    def readline(self):
+        """Return a line"""
+        try:
+            return self.lines.popleft()
+        except IndexError:
+            return None
+
+    def close(self):
+        """Imitate close of fd"""
+        pass
+
+
 def get_input_method(context):
     """Determine LDIF input method and return file descriptor"""
     param = context.param
@@ -349,8 +382,25 @@ def get_input_method(context):
         fin = sys.stdin
         if arg['verbose']:
             context.verbose('reading ldif from stdin')
-
-    return fin
+    if param['ldif_mem']:
+        if arg['verbose']:
+            context.verbose('read input to memory')
+            ldif = LdifDeque()
+        while True:
+            line = fin.readline()
+            if not line:
+                break
+            ldif.addline(line)
+        fin.close()
+        if arg['verbose']:
+            context.verbose('ldif loaded to memory:',
+                            str(len(ldif.lines)), 'lines')
+        if arg['verbose']:
+            context.verbose('restart time measurement')
+            context.start_time_measurement()
+        return ldif
+    else:
+        return fin
 
 
 def get_output_method(context):
@@ -393,6 +443,7 @@ class LoopVariables(object):
         self.path_prefix = None
         self.fname_attr_search = None
         self.rgx_excl = None
+        self.no_out = False
         self.init_vars(context)
 
     def init_vars(self, context):
@@ -407,6 +458,8 @@ class LoopVariables(object):
             self.single_ldif = True
         if context.param['ldif_wrap']:
             self.ldif_wrap = True
+        if context.param['no_out']:
+            self.no_out = True
         self.init_path_prefix(context.var)
         self.init_fname_attr_search(context.param)
         self.init_rgx_excl(context.var)
@@ -428,14 +481,16 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
     """Write the LDIF"""
     if var.single_ldif:
         # Add entry to single LDIF file
-        fout.write(''.join([entry, '\n']))
+        if not var.no_out:
+            fout.write(''.join([entry, '\n']))
     else:
         # Write entry to new LDIF file
         if fname_attr_val:
             fname = ''.join([fname_attr_val, '.ldif'])
             fpath = ''.join([var.path_prefix, fname])
-            with open(fpath, 'w') as fout_new:
-                fout_new.write(''.join([entry, '\n']))
+            if not var.no_out:
+                with open(fpath, 'w') as fout_new:
+                    fout_new.write(''.join([entry, '\n']))
             files.append(fname)
 
 
