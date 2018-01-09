@@ -470,30 +470,44 @@ def process_ldif(context):
         # End of an entry
         if line == '\n':
             if loop_var.ldif_wrap:
-                # Add last attribute (part)
-                entry = ''.join([entry, attr])
+                # Get value of attribute for use as filename
+                if line.startswith(loop_var.fname_attr_search):
+                    fname_attr_val = line.split(loop_var.fname_attr_search, 1)[1].rstrip()
+                # Filter out attributes
+                if loop_var.excl_attrs:
+                    match_excl = loop_var.rgx_excl.match(attr)
+                    if not match_excl:
+                        # Add last attribute (part)
+                        entry = ''.join([entry, attr])
             # Write LDIF file
             write_ldif(loop_var, fout, entry, fname_attr_val, files)
             # Prepare local variables for next entry
             entry, attr = '', ''
             fname_attr_val = None
             continue
-        # Get value of attribute for use as filename
-        elif line.startswith(loop_var.fname_attr_search):
-            fname_attr_val = line.split(loop_var.fname_attr_search, 1)[1].rstrip()
-        # Filter out attributes
-        if loop_var.excl_attrs:
-            match_excl = loop_var.rgx_excl.match(line)
-            if match_excl:
-                continue
         # Append the lines to entry
         if loop_var.ldif_wrap:
             if line.startswith(' '):
                 attr = ''.join([attr.rstrip(), line[1:]])
             else:
-                entry = ''.join([entry, attr])
+                # Get value of attribute for use as filename
+                if line.startswith(loop_var.fname_attr_search):
+                    fname_attr_val = line.split(loop_var.fname_attr_search, 1)[1].rstrip()
+                # Filter out attributes
+                if loop_var.excl_attrs:
+                    match_excl = loop_var.rgx_excl.match(attr)
+                    if not match_excl:
+                        entry = ''.join([entry, attr])
                 attr = line
         else:
+            # Get value of attribute for use as filename
+            if line.startswith(loop_var.fname_attr_search):
+                fname_attr_val = line.split(loop_var.fname_attr_search, 1)[1].rstrip()
+            # Filter out attributes
+            if loop_var.excl_attrs:
+                match_excl = loop_var.rgx_excl.match(line)
+                if match_excl:
+                    continue
             entry = ''.join([entry, line])
 
     clean_up_loop(context, fin, fout, files)
