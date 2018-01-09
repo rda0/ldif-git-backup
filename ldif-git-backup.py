@@ -23,7 +23,7 @@ class Context(object):
         'ldif_cmd': '',
         'ldif_file': '',
         'ldif_stdin': False,
-        'backup_dir': '/var/backups/ldap',
+        'backup_dir': 'ldif-git-backup',
         'commit_msg': 'ldif-git-backup',
         'excl_attrs': '',
         'ldif_attr': '',
@@ -59,13 +59,13 @@ class Context(object):
         """Parse cmd-line arguments"""
         parser = argparse.ArgumentParser(
             add_help=False, description='''Backup LDAP databases in LDIF format
-            using Git. The LDIF (Lightweight Directory Interchange Format) input
-            can be read either from stdin, subprocess or file. Care must be taken
-            to use the correct parameters, which create the LDIF input. By default
-            ldif-git-backup will split the LDIF to entries and save each entry in a
-            file named after the entry's UUID. If these defaults are used, the LDIF
-            must contain operational attributes or at least the `entryUUID`
-            attribute.'''
+            using Git. The LDIF (Lightweight Directory Interchange Format)
+            input can be read either from stdin, subprocess or file. Care must
+            be taken to use the correct parameters, which create the LDIF
+            input. By default ldif-git-backup will split the LDIF to entries
+            and save each entry in a file named after the entry's UUID. If
+            these defaults are used, the LDIF must contain operational
+            attributes or at least the `entryUUID` attribute.'''
         )
         group = parser.add_mutually_exclusive_group(required=False)
         group.add_argument(
@@ -103,12 +103,12 @@ class Context(object):
         parser.add_argument(
             '-a', '--ldif-attr',
             dest='ldif_attr', type=str,
-            help='''The value of attribute LDIF_ATTR will be used as filename. This
-            attribute must be unique in the LDIF. If the attribute is not present
-            in the entry, the whole entry will be silently skipped. This parameter
-            has no effect if combined with `-s`. If the attribute is not unique,
-            bad things will happen, as entries will overwrite eachother. (default:
-            `entryUUID`)'''
+            help='''The value of attribute LDIF_ATTR will be used as filename.
+            This attribute must be unique in the LDIF. If the attribute is not
+            present in the entry, the whole entry will be silently skipped.
+            This parameter has no effect if combined with `-s`. If the
+            attribute is not unique, bad things will happen, as entries will
+            overwrite eachother. (default: `entryUUID`)'''
         )
         parser.add_argument(
             '-s', '--single-ldif',
@@ -118,7 +118,8 @@ class Context(object):
         parser.add_argument(
             '-n', '--ldif-name',
             dest='ldif_name', type=str,
-            help='Use LDIF_NAME as filename in single-ldif mode (default: `db`)'
+            help='''Use LDIF_NAME as filename in single-ldif mode (default:
+            `db`)'''
         )
         parser.add_argument(
             '-c', '--config',
@@ -156,8 +157,8 @@ class Context(object):
             '-w', '--ldif-wrap',
             dest='ldif_wrap', action='store_const', const=True,
             help='''Set if LDIF input is wrapped, this will unwrap any wrapped
-            attributes. By default the input LDIF is expected to be unwrapped for
-            optimal performance'''
+            attributes. By default the input LDIF is expected to be unwrapped
+            for optimal performance'''
         )
         parser.add_argument(
             '-v', '--verbose',
@@ -392,12 +393,7 @@ class LoopVariables(object):
         self.path_prefix = None
         self.fname_attr_search = None
         self.rgx_excl = None
-        self.files = []
         self.init_vars(context)
-#        self.new_commit_files
-#        self.entry = ''
-#        self.attr = ''
-#        self.fname_attr_val = None
 
     def init_vars(self, context):
         """Initialize vars"""
@@ -438,15 +434,15 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
         if fname_attr_val:
             fname = ''.join([fname_attr_val, '.ldif'])
             fpath = ''.join([var.path_prefix, fname])
-            with open(fpath, 'w') as fout:
-                fout.write(''.join([entry, '\n']))
+            with open(fpath, 'w') as fout_new:
+                fout_new.write(''.join([entry, '\n']))
             files.append(fname)
 
 
 def loop_unwrap(var, fin, fout, files):
     """Stream from LDIF input and write LDIF output"""
     entry, attr = '', ''
-    fname_attr_val = None
+    fname = None
     while True:
         line = fin.readline()
         # Exit the loop when finished reading
@@ -459,7 +455,7 @@ def loop_unwrap(var, fin, fout, files):
         if line == '\n':
             # Get value of attribute for use as filename
             if attr.startswith(var.fname_attr_search):
-                fname_attr_val = attr.split(var.fname_attr_search, 1)[1].rstrip()
+                fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
             # Filter out attributes
             if var.excl_attrs:
                 match_excl = var.rgx_excl.match(attr)
@@ -467,10 +463,10 @@ def loop_unwrap(var, fin, fout, files):
                     # Add last attribute (part)
                     entry = ''.join([entry, attr])
             # Write LDIF file
-            write_ldif(var, fout, entry, fname_attr_val, files)
+            write_ldif(var, fout, entry, fname, files)
             # Prepare local variables for next entry
             entry, attr = '', ''
-            fname_attr_val = None
+            fname = None
             continue
         # Append the lines to entry
         if line.startswith(' '):
@@ -478,7 +474,7 @@ def loop_unwrap(var, fin, fout, files):
         else:
             # Get value of attribute for use as filename
             if attr.startswith(var.fname_attr_search):
-                fname_attr_val = attr.split(var.fname_attr_search, 1)[1].rstrip()
+                fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
             # Filter out attributes
             if var.excl_attrs:
                 match_excl = var.rgx_excl.match(attr)
@@ -492,7 +488,7 @@ def loop_unwrap(var, fin, fout, files):
 def loop(var, fin, fout, files):
     """Stream from LDIF input and write LDIF output"""
     entry = ''
-    fname_attr_val = None
+    fname = None
     while True:
         line = fin.readline()
         # Exit the loop when finished reading
@@ -504,14 +500,14 @@ def loop(var, fin, fout, files):
         # End of an entry
         if line == '\n':
             # Write LDIF file
-            write_ldif(var, fout, entry, fname_attr_val, files)
+            write_ldif(var, fout, entry, fname, files)
             # Prepare for next entry
             entry = ''
-            fname_attr_val = None
+            fname = None
             continue
         # Get value of attribute for use as filename
         if line.startswith(var.fname_attr_search):
-            fname_attr_val = line.split(var.fname_attr_search, 1)[1].rstrip()
+            fname = line.split(var.fname_attr_search, 1)[1].rstrip()
         # Filter out attributes
         if var.excl_attrs:
             match_excl = var.rgx_excl.match(line)
