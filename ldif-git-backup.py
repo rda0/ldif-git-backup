@@ -123,11 +123,12 @@ class Context(object):
             '-a', '--ldif-attr',
             dest='ldif_attr', type=str,
             help='''The value of attribute LDIF_ATTR will be used as filename.
-            This attribute must be unique in the LDIF. If the attribute is not
-            present in the entry or has no value, the entry will be silently
-            skipped. This parameter has no effect if combined with `-s`. If the
-            attribute is not unique, bad things will happen, as entries will
-            overwrite eachother. (default: `entryUUID`)'''
+            This attribute should be unique in the LDIF. Otherwise an
+            incremental number will be appended to the filename. If the
+            attribute is not present in the entry or has no value, the entry
+            will be written as `unknown-<incremental_number>.ldif`. This
+            parameter has no effect if combined with `-s`. (default:
+            `entryUUID`)'''
         )
         parser.add_argument(
             '-s', '--single-ldif',
@@ -423,13 +424,13 @@ def get_output_method(context):
     """"Determine LDIF output method and return file descriptor"""
     param = context.param
     var = context.var
-    files = []
+    files = {}
 
     if param['single_ldif']:
         # Open LDIF file for writing
         fname = ''.join([param['ldif_name'], '.ldif'])
         fpath = ''.join([var['path_prefix'], fname])
-        files.append(fname)
+        files[fname] = 0
         fout = open(fpath, 'w')
         context.verbose('single-ldif mode, writing to:', fname)
         return fout, files
@@ -502,12 +503,39 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
         # Write entry to new LDIF file
         if fname_attr_val:
             fname = ''.join([fname_attr_val, '.ldif'])
-            fpath = ''.join([var.path_prefix, fname])
-            if not var.no_out:
-                with open(fpath, 'w') as fout_new:
-                    for line in entry:
-                        fout_new.write(line)
-            files.append(fname)
+            if fname in files:
+                eprint('Warning: duplicate filename:', fname)
+                files[fname] += 1
+                fname = ''.join([fname.split('.ldif', 1)[0],
+                                 '-', str(files[fname]), '.ldif'])
+                fpath = ''.join([var.path_prefix, fname])
+            else:
+                files[fname] = 0
+                fpath = ''.join([var.path_prefix, fname])
+        else:
+            if not entry:
+                eprint('Invalid entry:', entry)
+                return
+            elif entry[0] == '\n' or entry[0] == '':
+                eprint('Invalid entry:', entry)
+                return
+            unknown = 'unknown.ldif'
+            if unknown in files:
+                files[unknown] += 1
+                fname = ''.join([unknown.split('.ldif', 1)[0],
+                                 '-', str(files[unknown]), '.ldif'])
+                fpath = ''.join([var.path_prefix, fname])
+            else:
+                files[unknown] = 0
+                fname = ''.join([unknown.split('.ldif', 1)[0],
+                                 '-', str(files[unknown]), '.ldif'])
+                fpath = ''.join([var.path_prefix, fname])
+            eprint('Warning: empty filename detected:', fname)
+            eprint('Entry:', entry)
+        if not var.no_out:
+            with open(fpath, 'w') as fout_new:
+                for line in entry:
+                    fout_new.write(line)
 
 
 def loop_ldifv1(var, fin, fout, files):
@@ -649,11 +677,15 @@ def loop_unwrap(var, fin, fout, files):
                 match_excl = var.rgx_excl.match(attr)
                 if not match_excl:
                     # Add last attribute (part)
-                    entry.append(attr)
+                    if attr:
+                        entry.append(attr)
             else:
-                entry.append(attr)
+                if attr:
+                    entry.append(attr)
             # Write LDIF file
-            write_ldif(var, fout, entry, fname, files)
+            if entry:
+                if entry[0] != '':
+                    write_ldif(var, fout, entry, fname, files)
             # Prepare local variables for next entry
             entry, attr = [], ''
             fname = None
@@ -676,9 +708,11 @@ def loop_unwrap(var, fin, fout, files):
             if var.excl_attrs:
                 match_excl = var.rgx_excl.match(attr)
                 if not match_excl:
-                    entry.append(attr)
+                    if attr:
+                        entry.append(attr)
             else:
-                entry.append(attr)
+                if attr:
+                    entry.append(attr)
         attr = line
 
     return files
@@ -700,7 +734,8 @@ def loop(var, fin, fout, files):
         # End of an entry
         if line == '\n':
             # Write LDIF file
-            write_ldif(var, fout, entry, fname, files)
+            if entry:
+                write_ldif(var, fout, entry, fname, files)
             # Prepare for next entry
             entry = []
             fname = None
@@ -764,7 +799,7 @@ def git_add(context):
         repo = context.var['repo']
         new_commit_files = context.var['new_commit_files']
         context.verbose('adding git files:', str(len(new_commit_files)))
-        repo.index.add(new_commit_files)
+        repo.index.add(new_commit_files.keys())
 
 
 def git_remove(context):
@@ -773,7 +808,7 @@ def git_remove(context):
         repo = context.var['repo']
         last_commit_files = context.var['last_commit_files']
         new_commit_files = context.var['new_commit_files']
-        to_remove_files = set(last_commit_files) - set(new_commit_files)
+        to_remove_files = set(last_commit_files) - set(new_commit_files.keys())
         context.verbose('removing git files:', str(len(to_remove_files)))
         if to_remove_files:
             repo.index.remove(to_remove_files, working_tree=True)

@@ -51,12 +51,12 @@ optional arguments:
                         `^(EXCLUDE_ATTRS):`
   -a LDIF_ATTR, --ldif-attr LDIF_ATTR
                         The value of attribute LDIF_ATTR will be used as
-                        filename. This attribute must be unique in the LDIF.
-                        If the attribute is not present in the entry or has no
-                        value, the entry will be silently skipped. This
-                        parameter has no effect if combined with `-s`. If the
-                        attribute is not unique, bad things will happen, as
-                        entries will overwrite eachother. (default:
+                        filename. This attribute should be unique in the LDIF.
+                        Otherwise an incremental number will be appended to
+                        the filename. If the attribute is not present in the
+                        entry or has no value, the entry will be written as
+                        `unknown-<incremental_number>.ldif`. This parameter
+                        has no effect if combined with `-s`. (default:
                         `entryUUID`)
   -s, --single-ldif     Use single LDIF mode, do not split entries to files
   -n LDIF_NAME, --ldif-name LDIF_NAME
