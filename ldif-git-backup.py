@@ -117,15 +117,15 @@ class Context(object):
             '-e', '--excl-attrs',
             dest='excl_attrs', type=str,
             help='''Exclude all attributes matching the regular expression
-            `^(EXCLUDE_ATTRS): `'''
+            `^(EXCLUDE_ATTRS):`'''
         )
         parser.add_argument(
             '-a', '--ldif-attr',
             dest='ldif_attr', type=str,
             help='''The value of attribute LDIF_ATTR will be used as filename.
             This attribute must be unique in the LDIF. If the attribute is not
-            present in the entry, the whole entry will be silently skipped.
-            This parameter has no effect if combined with `-s`. If the
+            present in the entry or has no value, the entry will be silently
+            skipped. This parameter has no effect if combined with `-s`. If the
             attribute is not unique, bad things will happen, as entries will
             overwrite eachother. (default: `entryUUID`)'''
         )
@@ -150,7 +150,9 @@ class Context(object):
             '-f', '--config-file',
             dest='config_file', type=str,
             help='''Path to the configuration file (default:
-            `./ldif-git-backup.conf`)'''
+            `./ldif-git-backup.conf`, if no file is found at the default
+            location, the config will be read from `/etc/ldif-git-backup.conf`)
+            '''
         )
         parser.add_argument(
             '-G', '--no-gc',
@@ -221,11 +223,17 @@ class Context(object):
         if self.arg['config_file']:
             cpath = pathlib.PosixPath(self.arg['config_file'])
             if cpath.is_file():
-                cparser.read(self.arg['config_file'])
+                cparser.read(cpath.as_posix())
             else:
                 sys.exit('Error: invalid config file')
         else:
-            cparser.read('ldif-git-backup.conf')
+            cpath = pathlib.PosixPath('ldif-git-backup.conf')
+            if cpath.is_file():
+                cparser.read(cpath.as_posix())
+            else:
+                cpath = pathlib.PosixPath('/etc/ldif-git-backup.conf')
+                if cpath.is_file():
+                    cparser.read(cpath.as_posix())
 
         if self.arg['config']:
             if cparser.has_section(self.arg['config']):
@@ -320,7 +328,7 @@ class Context(object):
     def initialize_regex(self):
         """Compile regular expressions"""
         if self.param['excl_attrs']:
-            regex = r'(' + self.param['excl_attrs'] + r'): '
+            regex = r'(' + self.param['excl_attrs'] + r'):'
             self.var['rgx_excl'] = re.compile(regex)
 
     def clean_ldif_cmd(self):
@@ -475,7 +483,7 @@ class LoopVariables(object):
 
     def init_fname_attr_search(self, param):
         """Initialize fname_attr_search"""
-        self.fname_attr_search = ''.join([param['ldif_attr'], ': '])
+        self.fname_attr_search = ''.join([param['ldif_attr'], ':'])
 
     def init_rgx_excl(self, var):
         """Initialize rgx_excl"""
@@ -578,7 +586,7 @@ def loop_ldifv1(var, fin, fout, files):
             attr = line.replace('\r\n ', '').replace('\n ', '')
             if not var.single_ldif and not fname_found:
                 if attr.startswith(var.fname_attr_search):
-                    fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
+                    fname = attr.split(var.fname_attr_search, 1)[1].strip()
                     fname_found = True
                     # Found broken filename
             if var.excl_attrs:
@@ -590,7 +598,7 @@ def loop_ldifv1(var, fin, fout, files):
         else:
             if not var.single_ldif and not fname_found:
                 if line.startswith(var.fname_attr_search):
-                    fname = line.split(var.fname_attr_search, 1)[1].rstrip()
+                    fname = line.split(var.fname_attr_search, 1)[1].strip()
                     fname_found = True
                     # Found filename attribute
             if var.excl_attrs:
@@ -635,13 +643,15 @@ def loop_unwrap(var, fin, fout, files):
             # Get value of attribute for use as filename
             if not var.single_ldif and not fname_found:
                 if attr.startswith(var.fname_attr_search):
-                    fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
+                    fname = attr.split(var.fname_attr_search, 1)[1].strip()
             # Filter out attributes
             if var.excl_attrs:
                 match_excl = var.rgx_excl.match(attr)
                 if not match_excl:
                     # Add last attribute (part)
                     entry.append(attr)
+            else:
+                entry.append(attr)
             # Write LDIF file
             write_ldif(var, fout, entry, fname, files)
             # Prepare local variables for next entry
@@ -652,7 +662,7 @@ def loop_unwrap(var, fin, fout, files):
         # Append the lines to entry
         if line[:1] == ' ':
             # Attribute not complete (wrapped)
-            attr = ''.join([attr.rstrip(), line[1:]])
+            attr = ''.join([attr.rstrip('\n'), line[1:]])
             continue
         else:
             # New attribute (line)
@@ -660,7 +670,7 @@ def loop_unwrap(var, fin, fout, files):
             if not var.single_ldif and not fname_found:
                 if attr.startswith(var.fname_attr_search):
                     # Get value of attribute (attr) for use as filename
-                    fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
+                    fname = attr.split(var.fname_attr_search, 1)[1].strip()
                     fname_found = True
             # Check if attribute (attr) is filtered
             if var.excl_attrs:
@@ -700,7 +710,7 @@ def loop(var, fin, fout, files):
         if not var.single_ldif and not fname_found:
             if line.startswith(var.fname_attr_search):
                 # Get value of attribute for use as filename
-                fname = line.split(var.fname_attr_search, 1)[1].rstrip()
+                fname = line.split(var.fname_attr_search, 1)[1].strip()
                 fname_found = True
         # Check if attribute is filtered
         if var.excl_attrs:

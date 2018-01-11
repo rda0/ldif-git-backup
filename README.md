@@ -6,8 +6,9 @@ Based on [ldap-git-backup](https://github.com/elmar/ldap-git-backup), modified a
 
 ## Requirements
 
-- `python3`
-- `python3-git`
+- `git` [Git](https://github.com/git/git)
+- `python3` [Python](https://github.com/python/cpython)
+- `python3-git` [GitPython](https://github.com/gitpython-developers/GitPython)
 
 ## Usage
 
@@ -47,15 +48,16 @@ optional arguments:
                         The commit message (default: `ldif-git-backup`)
   -e EXCL_ATTRS, --excl-attrs EXCL_ATTRS
                         Exclude all attributes matching the regular expression
-                        `^(EXCLUDE_ATTRS): `
+                        `^(EXCLUDE_ATTRS):`
   -a LDIF_ATTR, --ldif-attr LDIF_ATTR
                         The value of attribute LDIF_ATTR will be used as
                         filename. This attribute must be unique in the LDIF.
-                        If the attribute is not present in the entry, the
-                        whole entry will be silently skipped. This parameter
-                        has no effect if combined with `-s`. If the attribute
-                        is not unique, bad things will happen, as entries will
-                        overwrite eachother. (default: `entryUUID`)
+                        If the attribute is not present in the entry or has no
+                        value, the entry will be silently skipped. This
+                        parameter has no effect if combined with `-s`. If the
+                        attribute is not unique, bad things will happen, as
+                        entries will overwrite eachother. (default:
+                        `entryUUID`)
   -s, --single-ldif     Use single LDIF mode, do not split entries to files
   -n LDIF_NAME, --ldif-name LDIF_NAME
                         Use LDIF_NAME as filename in single-ldif mode
@@ -65,6 +67,8 @@ optional arguments:
                         `ldif-git-backup`)
   -f CONFIG_FILE, --config-file CONFIG_FILE
                         Path to the configuration file (default: `./ldif-git-
+                        backup.conf`, if no file is found at the default
+                        location, the config will be read from `/etc/ldif-git-
                         backup.conf`)
   -G, --no-gc           Do not perform garbage collection
   -R, --no-rm           Do not perform git rm
