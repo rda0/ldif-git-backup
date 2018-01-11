@@ -40,9 +40,8 @@ class Context(object):
         'single_ldif': False,
         'ldif_name': 'db',
         'ldif_wrap': False,
-        'ldif_mem': False,
         'ldif_v1': False,
-        'list': False,
+        'ldif_mem': False,
         'no_out': False,
     }
 
@@ -74,20 +73,31 @@ class Context(object):
             input. By default ldif-git-backup will split the LDIF to entries
             and save each entry in a file named after the entry's UUID. If
             these defaults are used, the LDIF must contain operational
-            attributes or at least the `entryUUID` attribute.'''
+            attributes or at least the `entryUUID` attribute. The LDIF input
+            format is expected to be in slapcat format without line wrapping or
+            comments. This LDIF format can be generated using the commands
+            `slapcat -o ldif-wrap=no` or `ldapsearch -LLL -o ldif-wrap=no '*'
+            +`. If the LDIF input is in slapcat format but with line wrapping,
+            the option `-w` can be used. This will unwrap all lines and write
+            the LDIF output unwrapped. If the LDIF input is in LDIFv1 format
+            (Version: 1) as per RFC 2849, the option `-1` can be used. This
+            will correctly handle LDIFv1 input (for example if it contains
+            comments or mutliple blank lines between entries). Any comments
+            will be stripped off the output LDIF, line wrapping is preserved.
+            Using this mode is a bit slower than the default mode.'''
         )
-        group = parser.add_mutually_exclusive_group(required=False)
-        group.add_argument(
+        group_input = parser.add_mutually_exclusive_group(required=False)
+        group_input.add_argument(
             '-i', '--ldif-stdin',
             dest='stdin', action='store_const', const=True,
             help='Read LDIF from stdin (default)'
         )
-        group.add_argument(
+        group_input.add_argument(
             '-x', '--ldif-cmd',
             dest='ldif_cmd', type=str,
             help='Read LDIF from subprocess'
         )
-        group.add_argument(
+        group_input.add_argument(
             '-l', '--ldif-file',
             dest='ldif_file', type=str,
             help='Read LDIF from file'
@@ -167,27 +177,25 @@ class Context(object):
             dest='no_out', action='store_const', const=True,
             help='Do not write output LDIF file(s)'
         )
-        parser.add_argument(
+        group_ldif = parser.add_mutually_exclusive_group(required=False)
+        group_ldif.add_argument(
             '-w', '--ldif-wrap',
             dest='ldif_wrap', action='store_const', const=True,
             help='''Set if LDIF input is wrapped, this will unwrap any wrapped
             attributes. By default the input LDIF is expected to be unwrapped
             for optimal performance'''
         )
+        group_ldif.add_argument(
+            '-1', '--ldif-v1',
+            dest='ldif_v1', action='store_const', const=True,
+            help='''Parse input in LDIFv1 format (Version: 1) as per RFC 2849.
+            Comments are ignored, line wrapping is preserved. Using this mode
+            is a bit slower than the default mode.'''
+        )
         parser.add_argument(
             '--mem',
             dest='ldif_mem', action='store_const', const=True,
-            help='Read input LDIF to memory'
-        )
-        parser.add_argument(
-            '-1', '--ldif-v1',
-            dest='ldif_v1', action='store_const', const=True,
-            help='Read input LDIFv1 format'
-        )
-        parser.add_argument(
-            '--list',
-            dest='list', action='store_const', const=True,
-            help='List mode'
+            help='Read input LDIF to memory first (experimental option)'
         )
         parser.add_argument(
             '-v', '--verbose',
@@ -474,7 +482,7 @@ class LoopVariables(object):
         self.rgx_excl = var['rgx_excl']
 
 
-def write_ldif_list(var, fout, entry, fname_attr_val, files):
+def write_ldif(var, fout, entry, fname_attr_val, files):
     """Write the LDIF"""
     entry.append('\n')
     if var.single_ldif:
@@ -494,24 +502,7 @@ def write_ldif_list(var, fout, entry, fname_attr_val, files):
             files.append(fname)
 
 
-def write_ldif(var, fout, entry, fname_attr_val, files):
-    """Write the LDIF"""
-    if var.single_ldif:
-        # Add entry to single LDIF file
-        if not var.no_out:
-            fout.write(''.join([entry, '\n']))
-    else:
-        # Write entry to new LDIF file
-        if fname_attr_val:
-            fname = ''.join([fname_attr_val, '.ldif'])
-            fpath = ''.join([var.path_prefix, fname])
-            if not var.no_out:
-                with open(fpath, 'w') as fout_new:
-                    fout_new.write(''.join([entry, '\n']))
-            files.append(fname)
-
-
-def loop_list_ldifv1(var, fin, fout, files):
+def loop_ldifv1(var, fin, fout, files):
     """Stream from LDIFv1 input and write LDIF output"""
     entry_end = False
     ldif_end = False
@@ -575,7 +566,7 @@ def loop_list_ldifv1(var, fin, fout, files):
             else:
                 finding_broken_attr = False
                 broken_attr = True
-                #print('broken attribute:', repr(line))
+                # Broken attribute found, next_line is new attribute
         elif next_line_broken:
             line = ''.join([line, next_line])
             finding_broken_attr = True
@@ -589,35 +580,35 @@ def loop_list_ldifv1(var, fin, fout, files):
                 if attr.startswith(var.fname_attr_search):
                     fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
                     fname_found = True
-                    #print('broken fname found:', repr(fname))
+                    # Found broken filename
             if var.excl_attrs:
                 match_excl = var.rgx_excl.match(attr)
                 if match_excl:
-                    #print('broken attr filtered:', repr(line))
                     line = ''
+                    # Broken attribute filtered
             broken_attr = False
         else:
             if not var.single_ldif and not fname_found:
                 if line.startswith(var.fname_attr_search):
                     fname = line.split(var.fname_attr_search, 1)[1].rstrip()
-                    #print('fname found:', repr(fname))
                     fname_found = True
+                    # Found filename attribute
             if var.excl_attrs:
                 match_excl = var.rgx_excl.match(line)
                 if match_excl:
                     line = ''
+                    # Attribute filtered
         # Add line to entry
-        entry.append(line)
+        if line:
+            entry.append(line)
         if not ldif_end:
             line = next_line
         else:
-            if entry[0]:
-                write_ldif_list(var, fout, entry, fname, files)
-                #print('entry', repr(entry))
+            if entry:
+                write_ldif(var, fout, entry, fname, files)
             break
         if write_entry:
-            write_ldif_list(var, fout, entry, fname, files)
-            #print('entry', repr(entry))
+            write_ldif(var, fout, entry, fname, files)
             entry = []
             line = ''
             fname_found = False
@@ -626,122 +617,7 @@ def loop_list_ldifv1(var, fin, fout, files):
     return files
 
 
-def loop_ldifv1(var, fin, fout, files):
-    """Stream from LDIFv1 input and write LDIF output"""
-    entry_end = False
-    ldif_end = False
-    write_entry = False
-    comment = False
-    fname = None
-    broken_attr = None
-    finding_broken_attr = False
-    fname_found = False
-    next_line_broken = False
-    next_line_sep = False
-    line = parse_ldif_version(var, fin)
-    next_line = None
-    entry = ''
-    while True:
-        next_line = fin.readline()
-        if not next_line:
-            ldif_end = True
-            next_line = ''
-        if var.ldif_cmd and not ldif_end:
-            next_line = next_line.decode('utf-8')
-        # check column 1
-        if next_line[:1] == ' ':
-            next_line_broken = True
-            next_line_sep = False
-        elif next_line[:1] == '\n' or next_line == '\r\n':
-            next_line_sep = True
-            next_line_broken = False
-        else:
-            next_line_broken = False
-            next_line_sep = False
-        if line[:1] == '#':
-            comment = True
-        # Filter comments
-        if comment:
-            if next_line_broken:
-                continue
-            elif next_line_sep:
-                comment = False
-                continue
-            else:
-                line = next_line
-                comment = False
-                continue
-        # Filter newlines between entries
-        if write_entry:
-            entry_end = True
-        if entry_end:
-            if next_line_sep:
-                continue
-            else:
-                write_entry = False
-                entry_end = False
-        elif next_line_sep:
-            write_entry = True
-        # Find broken attribute
-        if finding_broken_attr:
-            if next_line_broken:
-                line = ''.join([line, next_line])
-                continue
-            else:
-                finding_broken_attr = False
-                broken_attr = True
-                #print('broken attribute:', repr(line))
-        elif next_line_broken:
-            line = ''.join([line, next_line])
-            finding_broken_attr = True
-            continue
-        else:
-            broken_attr = False
-        # Find filename and filter attributes
-        if broken_attr:
-            attr = line.replace('\r\n ', '').replace('\n ', '')
-            if not var.single_ldif and not fname_found:
-                if attr.startswith(var.fname_attr_search):
-                    fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
-                    fname_found = True
-                    #print('broken fname found:', repr(fname))
-            if var.excl_attrs:
-                match_excl = var.rgx_excl.match(attr)
-                if match_excl:
-                    #print('broken attr filtered:', repr(line))
-                    line = ''
-            broken_attr = False
-        else:
-            if not var.single_ldif and not fname_found:
-                if line.startswith(var.fname_attr_search):
-                    fname = line.split(var.fname_attr_search, 1)[1].rstrip()
-                    #print('fname found:', repr(fname))
-                    fname_found = True
-            if var.excl_attrs:
-                match_excl = var.rgx_excl.match(line)
-                if match_excl:
-                    line = ''
-        # Add line to entry
-        entry = ''.join([entry, line])
-        if not ldif_end:
-            line = next_line
-        else:
-            if entry != '':
-                write_ldif(var, fout, entry, fname, files)
-                #print('entry', repr(entry))
-            break
-        if write_entry:
-            write_ldif(var, fout, entry, fname, files)
-            #print('entry', repr(entry))
-            entry = ''
-            line = ''
-            fname_found = False
-            fname = None
-
-    return files
-
-
-def loop_list_unwrap(var, fin, fout, files):
+def loop_unwrap(var, fin, fout, files):
     """Stream from LDIF input and write LDIF output"""
     entry, attr = [], ''
     fname = None
@@ -767,7 +643,7 @@ def loop_list_unwrap(var, fin, fout, files):
                     # Add last attribute (part)
                     entry.append(attr)
             # Write LDIF file
-            write_ldif_list(var, fout, entry, fname, files)
+            write_ldif(var, fout, entry, fname, files)
             # Prepare local variables for next entry
             entry, attr = [], ''
             fname = None
@@ -798,64 +674,7 @@ def loop_list_unwrap(var, fin, fout, files):
     return files
 
 
-def loop_unwrap(var, fin, fout, files):
-    """Stream from LDIF input and write LDIF output"""
-    entry, attr = '', ''
-    fname = None
-    fname_found = False
-    while True:
-        line = fin.readline()
-        # Exit the loop when finished reading
-        if not line:
-            break
-        # Optional decode bytes from subprocess
-        if var.ldif_cmd:
-            line = line.decode('utf-8')
-        # End of an entry
-        if line == '\n':
-            # Get value of attribute for use as filename
-            if not var.single_ldif and not fname_found:
-                if attr.startswith(var.fname_attr_search):
-                    fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
-            # Filter out attributes
-            if var.excl_attrs:
-                match_excl = var.rgx_excl.match(attr)
-                if not match_excl:
-                    # Add last attribute (part)
-                    entry = ''.join([entry, attr])
-            # Write LDIF file
-            write_ldif(var, fout, entry, fname, files)
-            # Prepare local variables for next entry
-            entry, attr = '', ''
-            fname = None
-            fname_found = False
-            continue
-        # Append the lines to entry
-        if line[:1] == ' ':
-            # Attribute not complete (wrapped)
-            attr = ''.join([attr.rstrip(), line[1:]])
-            continue
-        else:
-            # New attribute (line)
-            # Find filename
-            if not var.single_ldif and not fname_found:
-                if attr.startswith(var.fname_attr_search):
-                    # Get value of attribute (attr) for use as filename
-                    fname = attr.split(var.fname_attr_search, 1)[1].rstrip()
-                    fname_found = True
-            # Check if attribute (attr) is filtered
-            if var.excl_attrs:
-                match_excl = var.rgx_excl.match(attr)
-                if not match_excl:
-                    entry = ''.join([entry, attr])
-            else:
-                entry = ''.join([entry, attr])
-        attr = line
-
-    return files
-
-
-def loop_list(var, fin, fout, files):
+def loop(var, fin, fout, files):
     """Stream from LDIF input and write LDIF output"""
     entry = []
     fname = None
@@ -871,7 +690,7 @@ def loop_list(var, fin, fout, files):
         # End of an entry
         if line == '\n':
             # Write LDIF file
-            write_ldif_list(var, fout, entry, fname, files)
+            write_ldif(var, fout, entry, fname, files)
             # Prepare for next entry
             entry = []
             fname = None
@@ -890,46 +709,6 @@ def loop_list(var, fin, fout, files):
                 continue
         # Append the lines to entry
         entry.append(line)
-        #entry = ''.join([entry, line])
-
-    return files
-
-
-def loop(var, fin, fout, files):
-    """Stream from LDIF input and write LDIF output"""
-    entry = ''
-    fname = None
-    fname_found = False
-    while True:
-        line = fin.readline()
-        # Exit the loop when finished reading
-        if not line:
-            break
-        # Optional decode bytes from subprocess
-        if var.ldif_cmd:
-            line = line.decode('utf-8')
-        # End of an entry
-        if line == '\n':
-            # Write LDIF file
-            write_ldif(var, fout, entry, fname, files)
-            # Prepare for next entry
-            entry = ''
-            fname = None
-            fname_found = False
-            continue
-        # Find filename
-        if not var.single_ldif and not fname_found:
-            if line.startswith(var.fname_attr_search):
-                # Get value of attribute for use as filename
-                fname = line.split(var.fname_attr_search, 1)[1].rstrip()
-                fname_found = True
-        # Check if attribute is filtered
-        if var.excl_attrs:
-            match_excl = var.rgx_excl.match(line)
-            if match_excl:
-                continue
-        # Append the lines to entry
-        entry = ''.join([entry, line])
 
     return files
 
@@ -946,12 +725,8 @@ def parse_ldif_version(var, fin):
             version = line.split(':', 1)[1].strip()
             if version != '1':
                 eprint("Warning: expecting LDIFv1 compatible input")
-            #print('ldif version 1 detected')
         if line.startswith('dn:'):
-            #print('line of first entry found')
             return line
-        #print('unhandled line:', repr(line))
-        #continue
 
 
 def process_ldif(context):
@@ -961,22 +736,13 @@ def process_ldif(context):
     fin = get_input_method(context)
     fout, files = get_output_method(context)
 
-    if context.param['list']:
-        if context.param['ldif_v1']:
-            files = loop_list_ldifv1(loop_var, fin, fout, files)
-        else:
-            if not context.param['ldif_wrap']:
-                files = loop_list(loop_var, fin, fout, files)
-            else:
-                files = loop_list_unwrap(loop_var, fin, fout, files)
+    if context.param['ldif_v1']:
+        files = loop_ldifv1(loop_var, fin, fout, files)
     else:
-        if context.param['ldif_v1']:
-            files = loop_ldifv1(loop_var, fin, fout, files)
+        if not context.param['ldif_wrap']:
+            files = loop(loop_var, fin, fout, files)
         else:
-            if not context.param['ldif_wrap']:
-                files = loop(loop_var, fin, fout, files)
-            else:
-                files = loop_unwrap(loop_var, fin, fout, files)
+            files = loop_unwrap(loop_var, fin, fout, files)
 
     context.var['new_commit_files'] = files
     close_file_descriptors(fin, fout)

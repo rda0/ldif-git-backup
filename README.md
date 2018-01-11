@@ -15,7 +15,7 @@ Based on [ldap-git-backup](https://github.com/elmar/ldap-git-backup), modified a
 usage: ldif-git-backup.py [-i | -x LDIF_CMD | -l LDIF_FILE] [-d BACKUP_DIR]
                           [-m COMMIT_MSG] [-e EXCL_ATTRS] [-a LDIF_ATTR] [-s]
                           [-n LDIF_NAME] [-c CONFIG] [-f CONFIG_FILE] [-G]
-                          [-R] [-A] [-C] [-w] [-v] [-p] [-h]
+                          [-R] [-A] [-C] [-O] [-w | -1] [--mem] [-v] [-p] [-h]
 
 Backup LDAP databases in LDIF format using Git. The LDIF (Lightweight
 Directory Interchange Format) input can be read either from stdin, subprocess
@@ -23,7 +23,16 @@ or file. Care must be taken to use the correct parameters, which create the
 LDIF input. By default ldif-git-backup will split the LDIF to entries and save
 each entry in a file named after the entry's UUID. If these defaults are used,
 the LDIF must contain operational attributes or at least the `entryUUID`
-attribute.
+attribute. The LDIF input format is expected to be in slapcat format without
+line wrapping or comments. This LDIF format can be generated using the
+commands `slapcat -o ldif-wrap=no` or `ldapsearch -LLL -o ldif-wrap=no '*' +`.
+If the LDIF input is in slapcat format but with line wrapping, the option `-w`
+can be used. This will unwrap all lines and write the LDIF output unwrapped.
+If the LDIF input is in LDIFv1 format (Version: 1) as per RFC 2849, the option
+`-1` can be used. This will correctly handle LDIFv1 input (for example if it
+contains comments or mutliple blank lines between entries). Any comments will
+be stripped off the output LDIF, line wrapping is preserved. Using this mode
+is a bit slower than the default mode.
 
 optional arguments:
   -i, --ldif-stdin      Read LDIF from stdin (default)
@@ -32,8 +41,8 @@ optional arguments:
   -l LDIF_FILE, --ldif-file LDIF_FILE
                         Read LDIF from file
   -d BACKUP_DIR, --backup-dir BACKUP_DIR
-                        The directory for the git backup repository
-                        (default:`/var/backups/ldap`)
+                        The directory for the git backup repository (default:
+                        `/var/backups/ldap`)
   -m COMMIT_MSG, --commit-msg COMMIT_MSG
                         The commit message (default: `ldif-git-backup`)
   -e EXCL_ATTRS, --excl-attrs EXCL_ATTRS
@@ -61,9 +70,15 @@ optional arguments:
   -R, --no-rm           Do not perform git rm
   -A, --no-add          Do not perform git add
   -C, --no-commit       Do not perform git commit
+  -O, --no-out          Do not write output LDIF file(s)
   -w, --ldif-wrap       Set if LDIF input is wrapped, this will unwrap any
                         wrapped attributes. By default the input LDIF is
                         expected to be unwrapped for optimal performance
+  -1, --ldif-v1         Parse input in LDIFv1 format (Version: 1) as per RFC
+                        2849. Comments are ignored, line wrapping is
+                        preserved. Using this mode is a bit slower than the
+                        default mode.
+  --mem                 Read input LDIF to memory first (experimental option)
   -v, --verbose         Enable verbose mode
   -p, --print-params    Print active parameters and exit
   -h, --help            Show this help message and exit
