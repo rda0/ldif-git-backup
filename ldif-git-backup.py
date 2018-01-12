@@ -10,12 +10,23 @@ import pathlib
 import collections
 import configparser
 import time
+import enum
 import git
 
 
 def eprint(*args, **kwargs):
     """Print to stderr"""
     print(*args, file=sys.stderr, **kwargs)
+
+
+class HashMethod(enum.Enum):
+    """Class holding hash method"""
+    md5 = 1
+    sha1 = 2
+    sha224 = 3
+    sha256 = 4
+    sha384 = 5
+    sha512 = 6
 
 
 class Context(object):
@@ -39,6 +50,7 @@ class Context(object):
         'no_commit': False,
         'single_ldif': False,
         'ldif_name': 'db',
+        'hash_method': '',
         'ldif_wrap': False,
         'ldif_v1': False,
         'ldif_mem': False,
@@ -54,6 +66,9 @@ class Context(object):
             'repo': None,
             'new_commit_files': None,
             'last_commit_files': None,
+            'hash_method': None,
+            'hash_start' = None,
+            'hash_len' = None,
         }
         self.start_time_measurement()
         self.initialize_param()
@@ -61,6 +76,7 @@ class Context(object):
         self.initialize_input_method()
         self.initialize_ldif_attr()
         self.initialize_regex()
+        self.initialize_hash_method()
         self.clean_ldif_cmd()
 
     def parse_args(self):
@@ -142,6 +158,11 @@ class Context(object):
             `db`)'''
         )
         parser.add_argument(
+            '-h', '--hash',
+            dest='hash', type=str,
+            help='''Add a hash of the DN to the filename using HASH_METHOD.'''
+        )
+        parser.add_argument(
             '-c', '--config',
             dest='config', type=str,
             help='''Use configuration with saection name CONFIG (default:
@@ -211,7 +232,7 @@ class Context(object):
             help='Print active parameters and exit'
         )
         parser.add_argument(
-            '-h', '--help',
+            '-?', '--help',
             action='help',
             help='Show this help message and exit'
         )
@@ -332,6 +353,59 @@ class Context(object):
             regex = r'(' + self.param['excl_attrs'] + r'):'
             self.var['rgx_excl'] = re.compile(regex)
 
+    def parse_hash_method(self):
+        """Parse the hash_method string"""
+        hash_param = self.param['hash'].split(',', 1)
+        hash_method = hash_param[0]
+        if len(hash_param) > 1:
+            limits = hash_param.split(':', 1)
+            if len(hash_limits) != 2:
+                return False
+            else:
+                if hash_limits[0] = '' or hash_limits[0] == '0':
+                    limit_min = None
+                if hash_limits[1] = '' or hash_limits[1] == '0':
+                    limit_max = None
+                try:
+                    if limit_min:
+                        limit_min = int(limit_min)
+                        if limit_min > 0:
+                            var['hash_start'] = limit_min
+                        else:
+                            return False
+                    if limit_max:
+                        limit_max = int(limit_max)
+                        if limit_max > 0:
+                            var['hash_len'] = limit_min + limit_max
+                        else:
+                            return False
+                    else:
+                        return False
+                except ValueError:
+                    return False
+        if hash_method:
+            if hash_method == 'md5':
+                var['hash_method'] = HashMethod.md5
+            if hash_method == 'sha1':
+                var['hash_method'] = HashMethod.sha1
+            if hash_method == 'sha224':
+                var['hash_method'] = HashMethod.sha224
+            if hash_method == 'sha256':
+                var['hash_method'] = HashMethod.sha256
+            if hash_method == 'sha384':
+                var['hash_method'] = HashMethod.sha384
+            if hash_method == 'sha512':
+                var['hash_method'] = HashMethod.sha512
+            else:
+                return False
+        return True
+
+    def initialize_hash_method(self):
+        """Determine the hash_method from user input"""
+        valid = parse_hash_method()
+        if not valid:
+            sys.exit('Error: invalid hash_method')
+
     def clean_ldif_cmd(self):
         """Replace all whitespace characters with single whitespace"""
         ldif_cmd = self.param['ldif_cmd']
@@ -447,6 +521,9 @@ def close_file_descriptors(fin, fout):
         fout.close()
 
 
+
+
+
 class LoopVariables(object):
     """Flags used in loop"""
     def __init__(self, context):
@@ -458,6 +535,9 @@ class LoopVariables(object):
         self.fname_attr_search = None
         self.rgx_excl = None
         self.no_out = False
+        self.hash_method = None
+        self.hash_start = None
+        self.hash_len = None
         self.init_vars(context)
 
     def init_vars(self, context):
@@ -474,6 +554,9 @@ class LoopVariables(object):
             self.ldif_wrap = True
         if context.param['no_out']:
             self.no_out = True
+        self.hash_method = context.var['hash_method']
+        self.hash_start = context.var['hash_start']
+        self.hash_len = context.var['hash_len']
         self.init_path_prefix(context.var)
         self.init_fname_attr_search(context.param)
         self.init_rgx_excl(context.var)
@@ -495,12 +578,14 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
     """Write the LDIF"""
     entry.append('\n')
     if var.single_ldif:
-        # Add entry to single LDIF file
+        # Add entry to single LDiIF file
         if not var.no_out:
             for line in entry:
                 fout.write(line)
     else:
         # Write entry to new LDIF file
+        if var.hash_method:
+
         if fname_attr_val:
             fname = ''.join([fname_attr_val, '.ldif'])
             if fname in files:
@@ -532,6 +617,7 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
                 fpath = ''.join([var.path_prefix, fname])
             eprint('Warning: empty filename detected:', fname)
             eprint('Entry:', entry)
+        print(entry[0], end='')
         if not var.no_out:
             with open(fpath, 'w') as fout_new:
                 for line in entry:
