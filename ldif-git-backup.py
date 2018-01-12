@@ -508,6 +508,7 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
                 files[fname] += 1
                 fname = ''.join([fname.split('.ldif', 1)[0],
                                  '-', str(files[fname]), '.ldif'])
+                files[fname] = 0
                 fpath = ''.join([var.path_prefix, fname])
             else:
                 files[fname] = 0
@@ -519,16 +520,16 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
             elif entry[0] == '\n' or entry[0] == '':
                 eprint('Invalid entry:', entry)
                 return
-            unknown = 'unknown.ldif'
-            if unknown in files:
-                files[unknown] += 1
-                fname = ''.join([unknown.split('.ldif', 1)[0],
-                                 '-', str(files[unknown]), '.ldif'])
+            unnamed = 'ldif-git-backup-unnamed-entry.ldif'
+            if unnamed in files:
+                files[unnamed] += 1
+                fname = ''.join([unnamed.split('.ldif', 1)[0],
+                                 '-', str(files[unnamed]), '.ldif'])
+                files[fname] = 0
                 fpath = ''.join([var.path_prefix, fname])
             else:
-                files[unknown] = 0
-                fname = ''.join([unknown.split('.ldif', 1)[0],
-                                 '-', str(files[unknown]), '.ldif'])
+                files[unnamed] = 0
+                fname = unnamed
                 fpath = ''.join([var.path_prefix, fname])
             eprint('Warning: empty filename detected:', fname)
             eprint('Entry:', entry)
