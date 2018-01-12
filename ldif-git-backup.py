@@ -11,6 +11,7 @@ import collections
 import configparser
 import time
 import enum
+import hashlib
 import git
 
 
@@ -50,7 +51,7 @@ class Context(object):
         'no_commit': False,
         'single_ldif': False,
         'ldif_name': 'db',
-        'hash_method': '',
+        'hash': '',
         'ldif_wrap': False,
         'ldif_v1': False,
         'ldif_mem': False,
@@ -67,8 +68,8 @@ class Context(object):
             'new_commit_files': None,
             'last_commit_files': None,
             'hash_method': None,
-            'hash_start' = None,
-            'hash_len' = None,
+            'hash_start': None,
+            'hash_len': None,
         }
         self.start_time_measurement()
         self.initialize_param()
@@ -357,52 +358,59 @@ class Context(object):
         """Parse the hash_method string"""
         hash_param = self.param['hash'].split(',', 1)
         hash_method = hash_param[0]
-        if len(hash_param) > 1:
-            limits = hash_param.split(':', 1)
+        if len(hash_param) == 2:
+            hash_limits = hash_param[1].split(':', 1)
             if len(hash_limits) != 2:
                 return False
             else:
-                if hash_limits[0] = '' or hash_limits[0] == '0':
+                if hash_limits[0] == '' or hash_limits[0] == '0':
                     limit_min = None
-                if hash_limits[1] = '' or hash_limits[1] == '0':
+                else:
+                    limit_min = hash_limits[0]
+                if hash_limits[1] == '' or hash_limits[1] == '0':
                     limit_max = None
+                else:
+                    limit_max = hash_limits[1]
                 try:
                     if limit_min:
                         limit_min = int(limit_min)
                         if limit_min > 0:
-                            var['hash_start'] = limit_min
+                            self.var['hash_start'] = limit_min
                         else:
                             return False
                     if limit_max:
                         limit_max = int(limit_max)
                         if limit_max > 0:
-                            var['hash_len'] = limit_min + limit_max
+                            if limit_min:
+                                self.var['hash_len'] = limit_min + limit_max
+                            else:
+                                self.var['hash_len'] = limit_max
                         else:
                             return False
-                    else:
-                        return False
                 except ValueError:
                     return False
+        elif len(hash_param) > 2:
+            return False
         if hash_method:
             if hash_method == 'md5':
-                var['hash_method'] = HashMethod.md5
-            if hash_method == 'sha1':
-                var['hash_method'] = HashMethod.sha1
-            if hash_method == 'sha224':
-                var['hash_method'] = HashMethod.sha224
-            if hash_method == 'sha256':
-                var['hash_method'] = HashMethod.sha256
-            if hash_method == 'sha384':
-                var['hash_method'] = HashMethod.sha384
-            if hash_method == 'sha512':
-                var['hash_method'] = HashMethod.sha512
+                self.var['hash_method'] = hashlib.md5
+            elif hash_method == 'sha1':
+                self.var['hash_method'] = hashlib.sha1
+            elif hash_method == 'sha224':
+                self.var['hash_method'] = hashlib.sha224
+            elif hash_method == 'sha256':
+                self.var['hash_method'] = hashlib.sha256
+            elif hash_method == 'sha384':
+                self.var['hash_method'] = hashlib.sha384
+            elif hash_method == 'sha512':
+                self.var['hash_method'] = hashlib.sha512
             else:
                 return False
         return True
 
     def initialize_hash_method(self):
         """Determine the hash_method from user input"""
-        valid = parse_hash_method()
+        valid = self.parse_hash_method()
         if not valid:
             sys.exit('Error: invalid hash_method')
 
@@ -521,9 +529,6 @@ def close_file_descriptors(fin, fout):
         fout.close()
 
 
-
-
-
 class LoopVariables(object):
     """Flags used in loop"""
     def __init__(self, context):
@@ -535,7 +540,7 @@ class LoopVariables(object):
         self.fname_attr_search = None
         self.rgx_excl = None
         self.no_out = False
-        self.hash_method = None
+        self.hash = None
         self.hash_start = None
         self.hash_len = None
         self.init_vars(context)
@@ -554,7 +559,7 @@ class LoopVariables(object):
             self.ldif_wrap = True
         if context.param['no_out']:
             self.no_out = True
-        self.hash_method = context.var['hash_method']
+        self.hash = context.var['hash_method']
         self.hash_start = context.var['hash_start']
         self.hash_len = context.var['hash_len']
         self.init_path_prefix(context.var)
@@ -574,6 +579,36 @@ class LoopVariables(object):
         self.rgx_excl = var['rgx_excl']
 
 
+def get_dn_hash(entry, var):
+    """Returns the hash of the entry's DN"""
+    if not entry:
+        eprint('Invalid entry:', entry)
+        return False
+    elif entry[0][:3].lower() != 'dn:':
+        eprint('Invalid DN:', entry[0])
+        return False
+    else:
+        dn_line = entry[0]
+        for line in entry[1:]:
+            if line[:1] != ' ':
+                break
+            dn_line = ''.join([dn_line, line])
+        dn_raw = dn_line.split(':', 1)[1].lstrip()
+        entry_dn = dn_raw.replace('\r\n ', '').replace('\n ', '').rstrip()
+        hexdigest = var.hash(entry_dn.encode('utf-8')).hexdigest()
+        if var.hash_start:
+            if var.hash_len:
+                fname_hash = hexdigest[var.hash_start:var.hash_len]
+            else:
+                fname_hash = hexdigest[var.hash_start:]
+        else:
+            if var.hash_len:
+                fname_hash = hexdigest[:var.hash_len]
+            else:
+                fname_hash = hexdigest
+        return fname_hash
+
+
 def write_ldif(var, fout, entry, fname_attr_val, files):
     """Write the LDIF"""
     entry.append('\n')
@@ -584,8 +619,12 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
                 fout.write(line)
     else:
         # Write entry to new LDIF file
-        if var.hash_method:
-
+        if var.hash:
+            dn_hash = get_dn_hash(entry, var)
+            if not dn_hash:
+                eprint('Warning: no hash found')
+            else:
+                fname_attr_val = '-'.join([fname_attr_val, dn_hash])
         if fname_attr_val:
             fname = ''.join([fname_attr_val, '.ldif'])
             if fname in files:
@@ -617,7 +656,6 @@ def write_ldif(var, fout, entry, fname_attr_val, files):
                 fpath = ''.join([var.path_prefix, fname])
             eprint('Warning: empty filename detected:', fname)
             eprint('Entry:', entry)
-        print(entry[0], end='')
         if not var.no_out:
             with open(fpath, 'w') as fout_new:
                 for line in entry:
