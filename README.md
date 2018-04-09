@@ -75,6 +75,8 @@ optional arguments:
   -A, --no-add          Do not perform git add
   -C, --no-commit       Do not perform git commit
   -O, --no-out          Do not write output LDIF file(s)
+  -D, --no-dirty-check  Do not check if repo is dirty before commit. Always
+                        commit.
   -w, --ldif-wrap       Set if LDIF input is wrapped, this will unwrap any
                         wrapped attributes. By default the input LDIF is
                         expected to be unwrapped for optimal performance

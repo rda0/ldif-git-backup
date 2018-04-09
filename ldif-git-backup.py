@@ -37,6 +37,7 @@ class Context(object):
         'no_rm': False,
         'no_add': False,
         'no_commit': False,
+        'no_dirty_check': False,
         'single_ldif': False,
         'ldif_name': 'db',
         'ldif_wrap': False,
@@ -179,6 +180,11 @@ class Context(object):
             '-O', '--no-out',
             dest='no_out', action='store_const', const=True,
             help='Do not write output LDIF file(s)'
+        )
+        parser.add_argument(
+            '-D', '--no-dirty-check',
+            dest='no_dirty_check', action='store_const', const=True,
+            help='Do not check if repo is dirty before commit. Always commit.'
         )
         group_ldif = parser.add_mutually_exclusive_group(required=False)
         group_ldif.add_argument(
@@ -819,8 +825,11 @@ def git_commit(context):
     """Commit the changes"""
     if not context.param['no_commit']:
         repo = context.var['repo']
-        context.verbose('commiting git files')
-        repo.index.commit(context.param['commit_msg'])
+        if not context.param['no_dirty_check'] and not repo.is_dirty():
+            context.verbose('nothing to commit, working tree clean')
+        else:
+            context.verbose('commiting git files')
+            repo.index.commit(context.param['commit_msg'])
 
 
 def git_garbage_collect(context):
