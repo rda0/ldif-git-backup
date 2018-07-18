@@ -167,7 +167,7 @@ If the LDIF input is wrapped as when not using the `slapcat` or `ldapsearch` par
 This will unwrap all attributes. Otherwise any attribute filtering will not work as expected and the backup will be useless.
 
 ```
-/usr/sbin/slapcat -n 1 | ./ldif-git-backup.py -w -e '(enetry|context)CSN|.*?Timestamp'
+/usr/sbin/slapcat -n 1 | ./ldif-git-backup.py -w -e '(entry|context)CSN|.*?Timestamp'
 ```
 
 ### Using the configuration file
@@ -183,7 +183,7 @@ The special configuration section named `DEFAULT` can be used to set the default
 Any other configuration section names can be used to specify sets of configurations to be used with the option `-c <section_name>`.
 
 The example configuration [ldif-git-backup.conf](ldif-git-backup.conf) contains some example named configuration sections and explanations.
-ldif-git-backup uses the `configparser` paython module with extended interpolation enabled. See [python docs](https://docs.python.org/3/library/configparser.html) for more details on how to use this syntax.
+ldif-git-backup uses the `configparser` python module with extended interpolation enabled. See [python docs](https://docs.python.org/3/library/configparser.html) for more details on how to use this syntax.
 To use the example named configurations, use the following parameters.
 
 To backup the `slapd` configuration using `slapcat` subprocess:
